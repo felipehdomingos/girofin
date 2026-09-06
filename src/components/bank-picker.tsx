@@ -117,6 +117,40 @@ export function BankPicker({
 }
 
 /**
+ * Nome curto e legível para usar como apelido.
+ *
+ * A razão social do Banco Central não serve como apelido: "NU PAGAMENTOS -
+ * INSTITUIÇÃO DE PAGAMENTO" e "ITAÚ UNIBANCO S.A." são nomes de contrato, não
+ * de uso diário. Pior: como o apelido é único, preencher conta e cartão do
+ * mesmo banco com a mesma razão social fazia o segundo cadastro falhar.
+ *
+ * `prefixo` distingue os dois ("Itaú Unibanco" x "Cartão Itaú Unibanco"), que é
+ * o que evita a colisão logo na origem.
+ */
+export function shortBankName(fullName: string, prefixo = ""): string {
+  const limpo = fullName
+    .replace(
+      /\s*-?\s*(INSTITUI[ÇC][ÃA]O DE PAGAMENTO|SOCIEDADE DE CR[ÉE]DITO.*|CR[ÉE]DITO,? FINANCIAMENTO.*|CORRETORA DE T[ÍI]TULOS.*|DISTRIBUIDORA DE T[ÍI]TULOS.*|BANCO M[ÚU]LTIPLO|IP)\s*$/i,
+      "",
+    )
+    .replace(/\s*(S\.?\s?A\.?|S\/A|LTDA\.?|ME|EIRELI)\s*$/i, "")
+    .replace(/^BCO\s+/i, "Banco ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Razão social vem toda em maiúscula na base do BCB; Title Case fica legível.
+  const titulo = limpo
+    .toLowerCase()
+    .split(" ")
+    .map((p) =>
+      p.length <= 2 && !/^\d/.test(p) ? p : p.charAt(0).toUpperCase() + p.slice(1),
+    )
+    .join(" ");
+
+  return (prefixo ? `${prefixo} ` : "") + titulo;
+}
+
+/**
  * Logo do banco, com as iniciais como reserva.
  *
  * Nem todas as 476 instituições têm logo no CDN, e o CDN pode estar fora do ar.

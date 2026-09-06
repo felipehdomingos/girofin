@@ -13,7 +13,6 @@ import {
   StatCard,
 } from "@/components/ui";
 import { EntryDialog } from "@/components/entry-dialog";
-import { SetupAlert } from "@/components/setup-alert";
 import {
   currentMonth,
   formatDay,
@@ -74,8 +73,6 @@ export default function DashboardPage() {
           />
         }
       />
-
-      <SetupAlert hasAccounts={accounts.length > 0} />
 
       {overdue.length > 0 ? (
         <div

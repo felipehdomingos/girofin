@@ -20,4 +20,21 @@ require.cache[resolved] = {
   paths: [],
 };
 
+/*
+ * Banco próprio para os testes, longe do seu.
+ *
+ * O teste da fatura CRIA contas e lançamentos. Rodando contra data/financeiro.db
+ * ele encheria seu banco real de "Cartao teste" a cada execução.
+ */
+const path = require("node:path");
+const fs = require("node:fs");
+const dbTeste = path.join(__dirname, "..", ".test-build", "teste.db");
+for (const sufixo of ["", "-wal", "-shm"]) {
+  fs.rmSync(dbTeste + sufixo, { force: true });
+}
+process.env.FINANCEIRO_DB = dbTeste;
+
 require("../.test-build/scripts/test-lib.js");
+// Ciclo da fatura do cartão: compra -> aparece em Contas a pagar -> pagamento
+// como transferência, sem contar duas vezes no mês.
+require("../.test-build/scripts/test-fatura.js");

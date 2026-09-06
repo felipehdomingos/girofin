@@ -383,6 +383,35 @@ export async function payBillQuickAction(
   }
 }
 
+/**
+ * Paga a fatura do cartão como transferência entre contas próprias.
+ *
+ * Não usa payBill: aquilo cria uma DESPESA, e as compras do cartão já foram
+ * contadas como gasto no mês do vencimento. Registrar o pagamento como despesa
+ * nova dobraria o total do mês.
+ */
+export async function payCardInvoiceAction(
+  cardId: string,
+  fromAccountId: string,
+  amountCents: number,
+  date: string,
+): Promise<ActionResult> {
+  if (!fromAccountId) {
+    return { ok: false, error: "Escolha de qual conta sai o pagamento da fatura." };
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    return { ok: false, error: "Valor da fatura inválido." };
+  }
+
+  try {
+    repo.payCardInvoice({ cardId, fromAccountId, amountCents, date });
+    revalidateFinance();
+    return { ok: true, message: "Fatura quitada. O valor saiu da conta escolhida." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 // ---------------------------------------------------------------- carteiras
 
 export async function createAccountAction(formData: FormData): Promise<ActionResult> {
@@ -397,6 +426,8 @@ export async function createAccountAction(formData: FormData): Promise<ActionRes
     dueDay: kind === "CARTAO" ? formData.get("dueDay") : undefined,
     last4: kind === "CARTAO" ? formData.get("last4") || undefined : undefined,
     creditLimit: kind === "CARTAO" ? formData.get("creditLimit") || undefined : undefined,
+    overdraftLimit:
+      kind === "CORRENTE" ? formData.get("overdraftLimit") || undefined : undefined,
     bankIspb: formData.get("bankIspb") || null,
     bankName: formData.get("bankName") || null,
     logoUrl: formData.get("logoUrl") || null,
@@ -413,6 +444,7 @@ export async function createAccountAction(formData: FormData): Promise<ActionRes
       dueDay: parsed.data.dueDay ?? null,
       last4: parsed.data.last4 ?? null,
       creditLimitCents: parsed.data.creditLimit ?? null,
+      overdraftLimitCents: parsed.data.overdraftLimit ?? null,
       bankIspb: parsed.data.bankIspb ?? null,
       bankName: parsed.data.bankName ?? null,
       logoUrl: parsed.data.logoUrl ?? null,
@@ -650,8 +682,16 @@ export const createIncomeSourceForm: FormAction = async (_prev, formData) =>
   createIncomeSourceAction(formData);
 
 /**
- * Traduz erro do SQLite para linguagem de gente. O texto cru
- * ("UNIQUE constraint failed: categories.name") não diz nada a quem usa.
+ * Traduz erro do banco para linguagem de gente — SEM engolir o original.
+ *
+ * A versão anterior devolvia "Não foi possível salvar" para qualquer erro não
+ * previsto, e o texto real só aparecia no console do servidor. Numa versão beta
+ * isso é o pior dos dois mundos: quem usa não consegue relatar o que houve, e
+ * quem desenvolve não consegue reproduzir. Agora o erro desconhecido chega
+ * inteiro na tela, com prefixo indicando que é detalhe técnico.
+ *
+ * Os casos PREVISTOS continuam com mensagem amigável — ali a tradução ajuda,
+ * porque "UNIQUE constraint failed: categories.name" não diz nada a ninguém.
  */
 function mensagemDeErro(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
@@ -659,12 +699,27 @@ function mensagemDeErro(e: unknown): string {
   if (raw.includes("UNIQUE constraint failed: categories.name")) {
     return "Já existe uma categoria com esse nome.";
   }
+  if (raw.includes("UNIQUE constraint failed: accounts.name")) {
+    return "Já existe uma conta ou cartão com esse apelido. Use outro nome.";
+  }
+  if (raw.includes("UNIQUE constraint failed: income_sources.name")) {
+    return "Já existe uma empresa com esse nome.";
+  }
   if (raw.includes("FOREIGN KEY constraint failed")) {
-    return "Categoria inválida ou removida. Recarregue a página.";
+    return "Registro relacionado inválido ou removido. Recarregue a página.";
+  }
+  if (raw.includes("CHECK constraint failed: accounts")) {
+    return `Valor fora do permitido no cadastro da conta. Detalhe: ${raw}`;
   }
   if (raw.includes("CHECK constraint failed")) {
-    return "Algum valor está fora do permitido (confira valor e vencimento).";
+    return `Algum valor está fora do permitido. Detalhe: ${raw}`;
   }
-  console.error("[actions]", raw);
-  return "Não foi possível salvar. Tente de novo.";
+  if (raw.includes("NOT NULL constraint failed")) {
+    return `Faltou preencher um campo obrigatório. Detalhe: ${raw}`;
+  }
+
+  console.error("[actions] erro não tratado:", e);
+  // Beta: mostra o erro real em vez de escondê-lo. Quando o app estabilizar,
+  // dá para voltar a uma mensagem genérica — mas aí os casos já estarão mapeados.
+  return `Erro não tratado: ${raw}`;
 }

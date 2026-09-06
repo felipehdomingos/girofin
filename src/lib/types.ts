@@ -155,6 +155,8 @@ export interface Account {
   last4: string | null;
   /** Limite total do cartão, em centavos. Só em kind === "CARTAO". */
   creditLimitCents: number | null;
+  /** Limite do cheque especial. Não é saldo — é crédito do banco. */
+  overdraftLimitCents: number | null;
   /** Identificação do banco na base do Banco Central. */
   bankIspb: string | null;
   bankName: string | null;

@@ -249,7 +249,8 @@ export function getAccount(id: string): Account | null {
   const row = getDb()
     .prepare(
       `SELECT id, name, kind, openingCents, closingDay, dueDay, last4,
-              creditLimitCents, bankIspb, bankName, logoUrl, color, archived
+              creditLimitCents, overdraftLimitCents, bankIspb, bankName, logoUrl,
+              color, archived
          FROM accounts WHERE id = ?`,
     )
     .get(id) as unknown as AccountRow | undefined;
@@ -362,11 +363,14 @@ export function getMonthSummary(month: string): MonthSummary {
   const db = getDb();
   const { start, end } = monthBounds(month);
 
+  // `transferToAccountId IS NULL` em toda agregação de mês: transferência entre
+  // contas próprias não é receita nem despesa, é o mesmo dinheiro mudando de
+  // lugar. Contá-la inflaria o total do mês e faria a regra 50/30/20 mentir.
   const totals = db
     .prepare(
       `SELECT type, SUM(amountCents) AS total, COUNT(*) AS n
          FROM transactions
-        WHERE date BETWEEN ? AND ?
+        WHERE date BETWEEN ? AND ? AND transferToAccountId IS NULL
         GROUP BY type`,
     )
     .all(start, end) as unknown as Array<{
@@ -386,6 +390,7 @@ export function getMonthSummary(month: string): MonthSummary {
          FROM transactions t
          JOIN categories c ON c.id = t.categoryId
         WHERE t.date BETWEEN ? AND ? AND t.type = 'EXPENSE'
+          AND t.transferToAccountId IS NULL
         GROUP BY c.id
         ORDER BY total DESC`,
     )
@@ -412,6 +417,7 @@ export function getMonthSummary(month: string): MonthSummary {
          FROM transactions t
          JOIN income_sources s ON s.id = t.incomeSourceId
         WHERE t.date BETWEEN ? AND ? AND t.type = 'INCOME'
+          AND t.transferToAccountId IS NULL
         GROUP BY s.id
         ORDER BY total DESC`,
     )
@@ -442,6 +448,7 @@ export function getMonthSummary(month: string): MonthSummary {
       `SELECT nature, SUM(amountCents) AS total
          FROM transactions
         WHERE date BETWEEN ? AND ? AND type = 'EXPENSE'
+          AND transferToAccountId IS NULL
         GROUP BY nature`,
     )
     .all(start, end) as unknown as Array<{ nature: TxNature; total: number }>;
@@ -596,6 +603,7 @@ interface AccountRow {
   dueDay: number | null;
   last4: string | null;
   creditLimitCents: number | null;
+  overdraftLimitCents: number | null;
   bankIspb: string | null;
   bankName: string | null;
   logoUrl: string | null;
@@ -607,7 +615,8 @@ export function listAccounts(includeArchived = false): Account[] {
   const rows = getDb()
     .prepare(
       `SELECT id, name, kind, openingCents, closingDay, dueDay, last4,
-              creditLimitCents, bankIspb, bankName, logoUrl, color, archived
+              creditLimitCents, overdraftLimitCents, bankIspb, bankName, logoUrl,
+              color, archived
          FROM accounts
         WHERE (? = 1 OR archived = 0)
         ORDER BY kind, name`,
@@ -664,13 +673,107 @@ export function listAccountsWithBalance(month: string): AccountWithBalance[] {
   ): number =>
     rows.find((r) => r.accountId === accountId && r.type === type)?.total ?? 0;
 
+  /*
+   * O lado que RECEBE a transferência.
+   *
+   * A linha de transferência é gravada como EXPENSE na conta de origem — a
+   * consulta acima já a subtrai de lá. Falta creditar o destino, senão o
+   * dinheiro simplesmente evapora: some da conta corrente e não aparece no
+   * cartão nem na poupança.
+   *
+   * No cartão, é isso que zera a fatura: o saldo do cartão é negativo pelas
+   * compras, e a transferência entra somando de volta.
+   */
+  const recebidos = db
+    .prepare(
+      `SELECT transferToAccountId AS accountId, SUM(amountCents) AS total
+         FROM transactions
+        WHERE transferToAccountId IS NOT NULL
+        GROUP BY transferToAccountId`,
+    )
+    .all() as unknown as Array<{ accountId: string; total: number }>;
+
+  const recebidoPor = (accountId: string): number =>
+    recebidos.find((r) => r.accountId === accountId)?.total ?? 0;
+
   return accounts.map((a) => ({
     ...a,
     balanceCents:
-      a.openingCents + pick(totals, a.id, "INCOME") - pick(totals, a.id, "EXPENSE"),
+      a.openingCents +
+      pick(totals, a.id, "INCOME") -
+      pick(totals, a.id, "EXPENSE") +
+      recebidoPor(a.id),
     monthInCents: pick(monthTotals, a.id, "INCOME"),
     monthOutCents: pick(monthTotals, a.id, "EXPENSE"),
   }));
+}
+
+/**
+ * Quanto a fatura de um cartão soma num mês.
+ *
+ * Não é campo guardado: é a soma das compras cuja data de saída cai no mês —
+ * e a data de saída de uma compra no cartão já é o vencimento da fatura
+ * (ver resolveCashOutDate). Ou seja, a fatura É o conjunto de lançamentos
+ * daquele mês naquele cartão, e por isso nunca fica desatualizada.
+ */
+export function getCardInvoice(cardId: string, month: string): number {
+  const { start, end } = monthBounds(month);
+  const row = getDb()
+    .prepare(
+      `SELECT COALESCE(SUM(amountCents), 0) AS total
+         FROM transactions
+        WHERE accountId = ? AND type = 'EXPENSE'
+          AND transferToAccountId IS NULL
+          AND date BETWEEN ? AND ?`,
+    )
+    .get(cardId, start, end) as { total: number };
+  return row.total;
+}
+
+/**
+ * Paga a fatura do cartão como TRANSFERÊNCIA, não como despesa.
+ *
+ * As compras do cartão já entraram como gasto no mês do vencimento. Registrar
+ * o pagamento da fatura como uma despesa nova contaria o mesmo dinheiro duas
+ * vezes e dobraria o total do mês. Aqui o dinheiro só muda de lugar: sai da
+ * conta corrente, entra no cartão (zerando a fatura).
+ */
+export function payCardInvoice(input: {
+  cardId: string;
+  fromAccountId: string;
+  amountCents: number;
+  date: string;
+}): string {
+  const card = getAccount(input.cardId);
+  if (!card) throw new Error("Cartão não encontrado");
+
+  const db = getDb();
+  const id = newId();
+
+  // categoryId é obrigatório no schema, mas transferência não tem categoria de
+  // gasto. Usa a primeira disponível e fica fora de toda agregação por causa
+  // do transferToAccountId — nenhum relatório a enxerga.
+  const categoria = db.prepare(`SELECT id FROM categories LIMIT 1`).get() as
+    | { id: string }
+    | undefined;
+  if (!categoria) throw new Error("Nenhuma categoria cadastrada");
+
+  db.prepare(
+    `INSERT INTO transactions
+       (id, type, amountCents, date, description, nature, notes, categoryId,
+        accountId, transferToAccountId, method)
+     VALUES (?, 'EXPENSE', ?, ?, ?, 'VISTA', NULL, ?, ?, ?, 'TRANSFERENCIA')`,
+  ).run(
+    id,
+    input.amountCents,
+    input.date,
+    `Pagamento fatura ${card.name}`,
+    categoria.id,
+    input.fromAccountId,
+    input.cardId,
+  );
+
+  return id;
 }
 
 export function createAccount(input: {
@@ -681,6 +784,7 @@ export function createAccount(input: {
   dueDay: number | null;
   last4: string | null;
   creditLimitCents: number | null;
+  overdraftLimitCents: number | null;
   bankIspb: string | null;
   bankName: string | null;
   logoUrl: string | null;
@@ -690,8 +794,9 @@ export function createAccount(input: {
   getDb()
     .prepare(
       `INSERT INTO accounts (id, name, kind, openingCents, closingDay, dueDay, last4,
-                              creditLimitCents, bankIspb, bankName, logoUrl, color)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              creditLimitCents, overdraftLimitCents, bankIspb,
+                              bankName, logoUrl, color)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -704,6 +809,8 @@ export function createAccount(input: {
       input.kind === "CARTAO" ? input.dueDay : null,
       input.kind === "CARTAO" ? input.last4 : null,
       input.kind === "CARTAO" ? input.creditLimitCents : null,
+      // Cheque especial só existe em conta, nunca em cartão.
+      input.kind === "CARTAO" ? null : input.overdraftLimitCents,
       input.bankIspb,
       input.bankName,
       input.logoUrl,
@@ -925,6 +1032,70 @@ export function getBillsForMonth(month: string): BillInMonth[] {
       status,
       paidCents: payment?.amountCents ?? null,
       paidTransactionId: payment?.id ?? null,
+      daysUntilDue,
+    });
+  }
+
+  /*
+   * A fatura de cada cartão entra aqui automaticamente, sem cadastro separado.
+   *
+   * Uma fatura É uma conta a pagar: tem valor e vencimento. Mas o valor não se
+   * cadastra — ele é a soma das compras do mês naquele cartão. Por isso a
+   * fatura é SINTETIZADA na leitura em vez de virar linha em fixed_bills: uma
+   * linha guardada teria um valor que envelhece a cada nova compra.
+   */
+  for (const card of listAccounts().filter((a) => a.kind === "CARTAO")) {
+    const valor = getCardInvoice(card.id, month);
+    if (valor <= 0) continue;
+
+    const dia = Math.min(card.dueDay ?? 1, lastDay);
+    const dueDate = `${month}-${String(dia).padStart(2, "0")}`;
+    const daysUntilDue = daysBetween(todayIso, dueDate);
+
+    // Fatura paga = existe transferência para o cartão dentro do mês.
+    const pagamento = getDb()
+      .prepare(
+        `SELECT id, amountCents FROM transactions
+          WHERE transferToAccountId = ? AND date BETWEEN ? AND ?`,
+      )
+      .get(card.id, start, end) as { id: string; amountCents: number } | undefined;
+
+    result.push({
+      bill: {
+        // Prefixo "card:" deixa claro que é sintética: não existe em
+        // fixed_bills, e a UI usa isso para oferecer "pagar fatura" em vez da
+        // quitação normal.
+        id: `card:${card.id}`,
+        name: `Fatura ${card.name}`,
+        recurrence: "MONTHLY",
+        amountCents: valor,
+        dueDay: card.dueDay,
+        dueDate: null,
+        categoryId: "",
+        variable: true,
+        active: true,
+        barcode: null,
+        notes: null,
+      },
+      category: {
+        id: `card:${card.id}`,
+        name: "Cartão de crédito",
+        kind: "NEED",
+        color: card.color,
+        icon: "credit-card",
+        budgetCents: null,
+        archived: false,
+      },
+      dueDate,
+      status: pagamento
+        ? "PAID"
+        : daysUntilDue < 0
+          ? "OVERDUE"
+          : daysUntilDue === 0
+            ? "DUE_TODAY"
+            : "UPCOMING",
+      paidCents: pagamento?.amountCents ?? null,
+      paidTransactionId: pagamento?.id ?? null,
       daysUntilDue,
     });
   }

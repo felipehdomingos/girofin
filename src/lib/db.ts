@@ -74,6 +74,11 @@ function migrate(db: DatabaseSync): void {
       -- Limite total do cartão. Permite mostrar quanto do limite já foi usado,
       -- que é o número que evita a surpresa de ter o cartão recusado.
       creditLimitCents INTEGER,
+      -- Limite do cheque especial, para conta corrente. NÃO entra no saldo
+      -- disponível: é crédito do banco, não dinheiro seu. Somar os dois é
+      -- exatamente o erro que faz alguém gastar o que não tem.
+      -- Quanto foi USADO não é campo: é o próprio saldo quando fica negativo.
+      overdraftLimitCents INTEGER,
       -- Identificação do banco na lista do Banco Central (via BrasilAPI).
       -- Guardamos o logo resolvido para a tela não depender da API toda vez.
       bankIspb    TEXT,
@@ -165,6 +170,15 @@ function migrate(db: DatabaseSync): void {
       accountId   TEXT REFERENCES accounts(id) ON DELETE SET NULL,
       -- Só para entradas: qual emprego/fonte gerou esta receita.
       incomeSourceId TEXT REFERENCES income_sources(id) ON DELETE SET NULL,
+      -- TRANSFERÊNCIA entre contas próprias (pagar a fatura do cartão, mandar
+      -- para a poupança). Quando preenchido, a linha sai de "accountId" e entra
+      -- aqui, e NÃO conta como despesa do mês.
+      --
+      -- É isso que impede a contagem dobrada: as compras do cartão já entraram
+      -- como gasto no mês em que a fatura vence. Registrar o pagamento da
+      -- fatura como uma despesa nova contaria o mesmo dinheiro duas vezes e
+      -- dobraria o total do mês.
+      transferToAccountId TEXT REFERENCES accounts(id) ON DELETE SET NULL,
       -- COMO foi pago. Eixo diferente de "nature": "parcelado" diz como o
       -- gasto se distribui no tempo, "pix" diz por onde o dinheiro saiu.
       -- Um pix pode ser à vista e uma compra no crédito pode ser parcelada.
@@ -285,6 +299,11 @@ function migrateTransactionNature(db: DatabaseSync): void {
   if (!has("method")) {
     db.exec(`ALTER TABLE transactions ADD COLUMN method TEXT`);
   }
+  if (!has("transferToAccountId")) {
+    db.exec(
+      `ALTER TABLE transactions ADD COLUMN transferToAccountId TEXT REFERENCES accounts(id) ON DELETE SET NULL`,
+    );
+  }
 
   const accountColumns = db.prepare(`PRAGMA table_info(accounts)`).all() as Array<{
     name: string;
@@ -302,6 +321,9 @@ function migrateTransactionNature(db: DatabaseSync): void {
   }
   if (!accountHas("creditLimitCents")) {
     db.exec(`ALTER TABLE accounts ADD COLUMN creditLimitCents INTEGER`);
+  }
+  if (!accountHas("overdraftLimitCents")) {
+    db.exec(`ALTER TABLE accounts ADD COLUMN overdraftLimitCents INTEGER`);
   }
   if (!accountHas("bankIspb")) {
     db.exec(`ALTER TABLE accounts ADD COLUMN bankIspb TEXT`);

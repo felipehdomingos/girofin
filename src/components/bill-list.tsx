@@ -9,11 +9,12 @@ import {
   deleteBillAction,
   payBillAction,
   payBillQuickAction,
+  payCardInvoiceAction,
   unpayBillAction,
 } from "@/lib/actions";
 import { formatDay } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import type { BillInMonth, BillStatus } from "@/lib/types";
+import type { Account, BillInMonth, BillStatus } from "@/lib/types";
 
 const STATUS_LABEL: Record<BillStatus, string> = {
   PAID: "paga",
@@ -42,13 +43,20 @@ const STATUS_TONE: Record<
  */
 export function BillList({
   bills,
+  accounts,
   today,
 }: {
   bills: BillInMonth[];
+  /** Contas de onde pode sair o pagamento de uma fatura. */
+  accounts: Account[];
   today: string;
 }) {
   const [payingId, setPayingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [contaOrigem, setContaOrigem] = useState<Record<string, string>>({});
+
+  // Fatura de cartão nunca é paga por outro cartão.
+  const contasParaPagar = accounts.filter((a) => a.kind !== "CARTAO");
 
   if (bills.length === 0) {
     return (
@@ -160,7 +168,53 @@ export function BillList({
                   </button>
                 ) : null}
 
-                {b.status === "PAID" && b.paidTransactionId ? (
+                {/* Fatura de cartão: quitar é TRANSFERIR da conta para o
+                    cartão, não gerar uma despesa nova — as compras já foram
+                    contadas no mês do vencimento. */}
+                {b.bill.id.startsWith("card:") && b.status !== "PAID" ? (
+                  contasParaPagar.length === 0 ? (
+                    <span className="text-[11px] text-amber-200">
+                      Cadastre uma conta para poder quitar
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-sm">
+                      <label className="sr-only" htmlFor={`de-${b.bill.id}`}>
+                        Pagar {b.bill.name} com qual conta
+                      </label>
+                      <select
+                        id={`de-${b.bill.id}`}
+                        value={contaOrigem[b.bill.id] ?? contasParaPagar[0].id}
+                        onChange={(e) =>
+                          setContaOrigem((p) => ({
+                            ...p,
+                            [b.bill.id]: e.target.value,
+                          }))
+                        }
+                        className="cursor-pointer rounded-control border border-border bg-muted px-md py-sm text-xs"
+                      >
+                        {contasParaPagar.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ActionButton
+                        action={() =>
+                          payCardInvoiceAction(
+                            b.bill.id.replace("card:", ""),
+                            contaOrigem[b.bill.id] ?? contasParaPagar[0].id,
+                            b.bill.amountCents,
+                            today,
+                          )
+                        }
+                        ariaLabel={`Quitar ${b.bill.name}`}
+                        className="rounded-control bg-accent px-lg py-sm text-xs font-semibold text-on-accent hover:bg-accent/90"
+                      >
+                        Pagar fatura
+                      </ActionButton>
+                    </span>
+                  )
+                ) : b.status === "PAID" && b.paidTransactionId ? (
                   <ActionButton
                     action={() => unpayBillAction(b.paidTransactionId!)}
                     ariaLabel={`Desfazer pagamento de ${b.bill.name}`}

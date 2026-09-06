@@ -2,7 +2,7 @@ import { BillForm } from "@/components/bill-form";
 import { BillList } from "@/components/bill-list";
 import { PageHeader, StatCard } from "@/components/ui";
 import { currentMonth, formatMonthLong, today } from "@/lib/dates";
-import { getBillsForMonth, listCategories } from "@/lib/repo";
+import { getBillsForMonth, listAccounts, listCategories } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,7 @@ export default function ContasPage() {
   const month = currentMonth();
   const bills = getBillsForMonth(month);
   const categories = listCategories();
+  const accounts = listAccounts();
 
   const pending = bills.filter((b) => b.status !== "PAID");
   const overdue = bills.filter((b) => b.status === "OVERDUE");
@@ -47,7 +48,7 @@ export default function ContasPage() {
       </div>
 
       <div className="mt-xl grid gap-xl lg:grid-cols-[1.5fr_1fr]">
-        <BillList bills={bills} today={today()} />
+        <BillList bills={bills} accounts={accounts} today={today()} />
         <BillForm categories={categories} today={today()} />
       </div>
     </>

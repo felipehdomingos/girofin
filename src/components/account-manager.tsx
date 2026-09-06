@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 import { ActionButton } from "./action-button";
-import { BankLogo, BankPicker, ColorPicker } from "./bank-picker";
+import { BankLogo, BankPicker, ColorPicker, shortBankName } from "./bank-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
 import { Badge, Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
 import {
@@ -152,50 +152,78 @@ function SecaoContas({
             <ul className="flex flex-col">
               {contas.map((a) => {
                 const Icon = KIND_ICON[a.kind];
+                // Cheque especial usado NÃO é um campo: é o próprio saldo
+                // quando fica negativo. Guardar "quanto usei" separado criaria
+                // duas fontes de verdade que divergem no primeiro lançamento.
+                const usadoNoEspecial = a.balanceCents < 0 ? -a.balanceCents : 0;
+                const pctEspecial =
+                  a.overdraftLimitCents && usadoNoEspecial > 0
+                    ? safePercent(usadoNoEspecial, a.overdraftLimitCents)
+                    : null;
+
                 return (
-                  <li
-                    key={a.id}
-                    className="flex flex-wrap items-center gap-lg border-b border-border py-lg last:border-0"
-                  >
-                    {a.logoUrl ? (
-                      <BankLogo bank={{ name: a.name, logoUrl: a.logoUrl }} />
-                    ) : (
-                      <span
-                        className="flex size-8 shrink-0 items-center justify-center rounded-control"
-                        style={{ backgroundColor: `${a.color}22` }}
+                  <li key={a.id} className="border-b border-border py-lg last:border-0">
+                    <div className="flex flex-wrap items-center gap-lg">
+                      {a.logoUrl ? (
+                        <BankLogo bank={{ name: a.name, logoUrl: a.logoUrl }} />
+                      ) : (
+                        <span
+                          className="flex size-8 shrink-0 items-center justify-center rounded-control"
+                          style={{ backgroundColor: `${a.color}22` }}
+                        >
+                          <Icon
+                            className="size-4"
+                            style={{ color: a.color }}
+                            aria-hidden="true"
+                          />
+                        </span>
+                      )}
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{a.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {ACCOUNT_KIND_LABEL[a.kind]}
+                          {a.overdraftLimitCents
+                            ? ` · cheque especial de ${formatBRL(a.overdraftLimitCents)}`
+                            : ""}
+                        </span>
+                      </span>
+
+                      <span className="text-right">
+                        <Money cents={a.balanceCents} size="md" tone="auto" />
+                        <span className="block text-[11px] text-muted-foreground">
+                          {usadoNoEspecial > 0
+                            ? "saldo devedor"
+                            : `no mês: +${(a.monthInCents / 100).toFixed(0)} / −${(a.monthOutCents / 100).toFixed(0)}`}
+                        </span>
+                      </span>
+
+                      <ActionButton
+                        action={() => deleteAccountAction(a.id)}
+                        confirm
+                        confirmLabel="Excluir?"
+                        ariaLabel={`Excluir ${a.name}`}
+                        className="rounded-control p-sm text-muted-foreground hover:bg-muted hover:text-neg"
                       >
-                        <Icon
-                          className="size-4"
-                          style={{ color: a.color }}
-                          aria-hidden="true"
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </ActionButton>
+                    </div>
+
+                    {pctEspecial !== null ? (
+                      <div className="mt-md">
+                        <ProgressBar
+                          value={usadoNoEspecial}
+                          max={a.overdraftLimitCents ?? 1}
+                          label={`${a.name}: ${pctEspecial.toFixed(0)}% do cheque especial usado`}
+                          tone={pctEspecial > 80 ? "negative" : "warning"}
                         />
-                      </span>
-                    )}
-
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm">{a.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {ACCOUNT_KIND_LABEL[a.kind]}
-                      </span>
-                    </span>
-
-                    <span className="text-right">
-                      <Money cents={a.balanceCents} size="md" tone="auto" />
-                      <span className="block text-[11px] text-muted-foreground">
-                        no mês: +{(a.monthInCents / 100).toFixed(0)} / −
-                        {(a.monthOutCents / 100).toFixed(0)}
-                      </span>
-                    </span>
-
-                    <ActionButton
-                      action={() => deleteAccountAction(a.id)}
-                      confirm
-                      confirmLabel="Excluir?"
-                      ariaLabel={`Excluir ${a.name}`}
-                      className="rounded-control p-sm text-muted-foreground hover:bg-muted hover:text-neg"
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                    </ActionButton>
+                        <p className="mt-xs text-[11px] text-neg">
+                          Usando {formatBRL(usadoNoEspecial)} de{" "}
+                          {formatBRL(a.overdraftLimitCents ?? 0)} do cheque especial
+                          ({pctEspecial.toFixed(0)}%) — é dívida, e das mais caras.
+                        </p>
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}
@@ -225,7 +253,8 @@ function SecaoContas({
                   selected={bank}
                   onSelect={(b) => {
                     setBank(b);
-                    if (b && !nome.trim()) setNome(b.fullName);
+                    // Nome curto e legível, nao a razao social do BCB.
+                    if (b && !nome.trim()) setNome(shortBankName(b.fullName));
                   }}
                 />
               </Field>
@@ -268,7 +297,7 @@ function SecaoContas({
                 label="Saldo atual"
                 name="opening"
                 error={fieldError(state, "opening")}
-                hint="Quanto tem hoje. Aceita negativo (use - na frente) para cheque especial."
+                hint="Quanto tem hoje. Se estiver no cheque especial, use - na frente (ex: -350,00)."
               >
                 <Input
                   id="acc-opening"
@@ -278,6 +307,32 @@ function SecaoContas({
                   className="font-mono"
                 />
               </Field>
+
+              {kind === "CORRENTE" ? (
+                <Field
+                  label="Limite do cheque especial"
+                  name="overdraftLimit"
+                  error={fieldError(state, "overdraftLimit")}
+                  hint="Opcional. Com ele o app mostra quanto do limite você já consumiu."
+                >
+                  <Input
+                    id="acc-overdraft"
+                    name="overdraftLimit"
+                    inputMode="decimal"
+                    placeholder="2.000,00"
+                    className="font-mono"
+                  />
+                </Field>
+              ) : null}
+
+              {kind === "CORRENTE" ? (
+                <p className="rounded-control border border-border bg-muted/50 p-lg text-[11px] leading-relaxed text-muted-foreground">
+                  O limite do cheque especial <strong>não entra</strong> no seu saldo
+                  disponível. É crédito do banco, não dinheiro seu — somar os dois é
+                  exatamente o que faz alguém gastar o que não tem. Saldo negativo
+                  aparece como dívida, porque é o que ele é.
+                </p>
+              ) : null}
 
               <Field
                 label="Cor"
@@ -455,7 +510,9 @@ function SecaoCartoes({
                   selected={bank}
                   onSelect={(b) => {
                     setBank(b);
-                    if (b && !nome.trim()) setNome(b.fullName);
+                    // Prefixo "Cartao": o apelido e unico, e sem ele o cartao
+                    // colidiria com a conta do mesmo banco.
+                    if (b && !nome.trim()) setNome(shortBankName(b.fullName, "Cartão"));
                   }}
                 />
               </Field>

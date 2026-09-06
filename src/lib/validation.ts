@@ -150,6 +150,12 @@ export const accountSchema = z
     .trim()
     .optional()
     .transform((v) => (v ? parseBRLToCents(v) : null)),
+  // Limite do cheque especial. Só faz sentido em conta corrente.
+  overdraftLimit: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? parseBRLToCents(v) : null)),
   bankIspb: z.string().trim().max(20).optional().nullable(),
   bankName: z.string().trim().max(120).optional().nullable(),
   logoUrl: z

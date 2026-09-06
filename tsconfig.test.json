@@ -17,7 +17,11 @@
   //   actions.ts    -> "use server" e next/cache não existem fora do Next
   //   bcb.ts        -> usa a opção `next` do fetch, que o Next injeta nos tipos
   //   validation.ts -> nada aqui depende dela
-  "include": ["scripts/test-lib.ts", "src/lib/**/*.ts"],
+  "include": [
+    "scripts/test-lib.ts",
+    "scripts/test-fatura.ts",
+    "src/lib/**/*.ts"
+  ],
   "exclude": [
     "src/lib/actions.ts",
     "src/lib/validation.ts",

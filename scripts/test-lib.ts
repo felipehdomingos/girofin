@@ -236,4 +236,4 @@ check("sem parcelas", p3[0].installments, null);
 check("descricao com numero continua a vista", parseBulk("99 pop 23", categories)[0].nature, "VISTA");
 
 console.log(`\n${passed} passaram, ${failed} falharam\n`);
-process.exit(failed > 0 ? 1 : 0);
+if (failed > 0) process.exit(1);
