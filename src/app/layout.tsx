@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 
 import { Nav } from "@/components/nav";
+import { listAccounts } from "@/lib/repo";
 import "./globals.css";
 
 /**
@@ -44,6 +45,9 @@ export const viewport: Viewport = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // O item "Cartões" só existe depois que há cartão cadastrado — menu com
+  // seção vazia é ruído. Leitura barata: uma consulta de contas por navegação.
+  const hasCards = listAccounts().some((a) => a.kind === "CARTAO");
   return (
     <html lang="pt-BR" className={`${plexSans.variable} ${plexMono.variable}`}>
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
@@ -57,7 +61,7 @@ export default function RootLayout({
         </a>
 
         <div className="lg:flex">
-          <Nav />
+          <Nav hasCards={hasCards} />
           <main
             id="conteudo"
             /* pb-24 no mobile: a barra inferior é fixa e comeria o último card

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { learnFromCorrection, parseBulk, reinforce } from "./categorize";
-import { today } from "./dates";
+import { addMonthsToDate, today } from "./dates";
 import * as repo from "./repo";
 import {
   accountSchema,
@@ -439,6 +439,110 @@ export async function payScheduledAction(
     });
     revalidateFinance();
     return { ok: true, message: "Pagamento registrado." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
+/**
+ * Grava as compras lidas de uma fatura de cartão.
+ *
+ * Recebe as linhas JÁ REVISADAS pelo usuário — o PDF é lido no navegador e
+ * nunca chega aqui, nem a senha dele.
+ *
+ * Duas regras que decidem em qual mês cada linha cai:
+ *
+ * 1. Compra à vista e a PARCELA DESTE MÊS entram na fatura corrente, via a
+ *    regra de ciclo do cartão (compra depois do fechamento vai para a fatura
+ *    seguinte) — a mesma usada no lançamento manual.
+ * 2. Parcela "3/10" significa que 3 já foram cobradas e 7 ainda vêm. Só as que
+ *    FALTAM são criadas: as passadas já estão nas faturas anteriores, e
+ *    recriá-las contaria o mesmo dinheiro duas vezes.
+ */
+export async function importInvoiceAction(
+  cardId: string,
+  linhas: Array<{
+    description: string;
+    amountCents: number;
+    purchaseDate: string;
+    categoryId: string;
+    installmentNo: number | null;
+    installmentTotal: number | null;
+  }>,
+): Promise<ActionResult> {
+  if (linhas.length === 0) return { ok: false, error: "Nenhuma compra selecionada." };
+
+  try {
+    const card = repo.getAccount(cardId);
+    if (!card || card.kind !== "CARTAO") {
+      return { ok: false, error: "Cartão não encontrado." };
+    }
+
+    let criados = 0;
+    let parcelasFuturas = 0;
+
+    for (const l of linhas) {
+      if (l.amountCents <= 0 || !l.description.trim() || !l.categoryId) continue;
+
+      const restantes =
+        l.installmentNo && l.installmentTotal
+          ? Math.max(l.installmentTotal - l.installmentNo, 0)
+          : 0;
+
+      if (restantes === 0) {
+        // À vista, ou última parcela: uma linha só.
+        repo.createTransaction({
+          type: "EXPENSE",
+          amountCents: l.amountCents,
+          date: l.purchaseDate,
+          description: l.installmentTotal
+            ? `${l.description} (${l.installmentNo}/${l.installmentTotal})`
+            : l.description,
+          categoryId: l.categoryId,
+          nature: l.installmentTotal ? "PARCELADO" : "VISTA",
+          accountId: cardId,
+          incomeSourceId: null,
+          method: "CREDITO",
+          notes: null,
+        });
+        criados++;
+      } else {
+        /*
+         * Parcelada com parcelas a vencer. createTransaction divide um TOTAL,
+         * mas aqui já se conhece o valor exato de cada parcela — multiplicar
+         * para "recompor" o total e deixar dividir de novo introduziria erro de
+         * centavo. Por isso cada parcela restante é criada individualmente.
+         */
+        for (let k = 0; k <= restantes; k++) {
+          repo.createTransaction({
+            type: "EXPENSE",
+            amountCents: l.amountCents,
+            date: addMonthsToDate(l.purchaseDate, k),
+            description: `${l.description} (${(l.installmentNo ?? 1) + k}/${l.installmentTotal})`,
+            categoryId: l.categoryId,
+            nature: "PARCELADO",
+            accountId: cardId,
+            incomeSourceId: null,
+            method: "CREDITO",
+            notes: null,
+          });
+        }
+        criados++;
+        parcelasFuturas += restantes;
+      }
+
+      learnFromCorrection(l.description, l.categoryId);
+    }
+
+    revalidateFinance();
+    return {
+      ok: true,
+      message:
+        `${criados} ${criados === 1 ? "compra importada" : "compras importadas"}` +
+        (parcelasFuturas > 0
+          ? ` · ${parcelasFuturas} parcela${parcelasFuturas === 1 ? "" : "s"} agendada${parcelasFuturas === 1 ? "" : "s"} para os próximos meses`
+          : ""),
+    };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }

@@ -38,3 +38,5 @@ require("../.test-build/scripts/test-lib.js");
 // Ciclo da fatura do cartão: compra -> aparece em Contas a pagar -> pagamento
 // como transferência, sem contar duas vezes no mês.
 require("../.test-build/scripts/test-fatura.js");
+// Leitura de fatura de cartão: texto -> lançamentos, sem depender de PDF.
+require("../.test-build/scripts/test-invoice.js");

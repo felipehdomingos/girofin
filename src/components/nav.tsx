@@ -8,6 +8,7 @@ import {
   CalendarClock,
   TrendingUp,
   PiggyBank,
+  CreditCard,
   Settings,
 } from "lucide-react";
 
@@ -23,7 +24,7 @@ import {
  * mínimo de 44px para alvo de toque.
  */
 
-const ITEMS = [
+const BASE = [
   { href: "/", label: "Resumo", icon: LayoutDashboard },
   { href: "/relatorios", label: "Relatórios", icon: ChartColumn },
   { href: "/contas", label: "A pagar", icon: CalendarClock },
@@ -32,8 +33,16 @@ const ITEMS = [
   { href: "/configuracoes", label: "Config", icon: Settings },
 ] as const;
 
-export function Nav() {
+/** Só aparece depois que existe pelo menos um cartão cadastrado. */
+const CARTOES = { href: "/cartoes", label: "Cartões", icon: CreditCard } as const;
+
+export function Nav({ hasCards = false }: { hasCards?: boolean }) {
   const pathname = usePathname();
+
+  // Cartões entra logo depois de "A pagar", perto do assunto vizinho.
+  const ITEMS = hasCards
+    ? [...BASE.slice(0, 3), CARTOES, ...BASE.slice(3)]
+    : [...BASE];
 
   // "/" só casa exato; as outras casam com as subrotas.
   const isActive = (href: string) =>
