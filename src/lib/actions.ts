@@ -458,6 +458,57 @@ export async function createAccountAction(formData: FormData): Promise<ActionRes
   }
 }
 
+/**
+ * Edita conta/cartão. Mesma validação do cadastro — o formulário é o mesmo,
+ * só muda o destino.
+ */
+export async function updateAccountAction(formData: FormData): Promise<ActionResult> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { ok: false, error: "Registro não identificado." };
+
+  const kind = formData.get("kind");
+
+  const parsed = accountSchema.safeParse({
+    name: formData.get("name"),
+    kind,
+    color: formData.get("color"),
+    opening: formData.get("opening") || undefined,
+    closingDay: kind === "CARTAO" ? formData.get("closingDay") : undefined,
+    dueDay: kind === "CARTAO" ? formData.get("dueDay") : undefined,
+    last4: kind === "CARTAO" ? formData.get("last4") || undefined : undefined,
+    creditLimit: kind === "CARTAO" ? formData.get("creditLimit") || undefined : undefined,
+    overdraftLimit:
+      kind === "CORRENTE" ? formData.get("overdraftLimit") || undefined : undefined,
+    bankIspb: formData.get("bankIspb") || null,
+    bankName: formData.get("bankName") || null,
+    logoUrl: formData.get("logoUrl") || null,
+  });
+
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    repo.updateAccount(id, {
+      name: parsed.data.name,
+      kind: parsed.data.kind,
+      openingCents: parsed.data.opening,
+      closingDay: parsed.data.closingDay ?? null,
+      dueDay: parsed.data.dueDay ?? null,
+      last4: parsed.data.last4 ?? null,
+      creditLimitCents: parsed.data.creditLimit ?? null,
+      overdraftLimitCents: parsed.data.overdraftLimit ?? null,
+      bankIspb: parsed.data.bankIspb ?? null,
+      bankName: parsed.data.bankName ?? null,
+      logoUrl: parsed.data.logoUrl ?? null,
+      color: parsed.data.color,
+    });
+    revalidateFinance();
+    revalidatePath("/configuracoes");
+    return { ok: true, message: "Alterações salvas." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 export async function deleteAccountAction(id: string): Promise<ActionResult> {
   try {
     repo.deleteAccount(id);
@@ -677,6 +728,9 @@ export const createScenarioForm: FormAction = async (_prev, formData) =>
 
 export const createAccountForm: FormAction = async (_prev, formData) =>
   createAccountAction(formData);
+
+export const updateAccountForm: FormAction = async (_prev, formData) =>
+  updateAccountAction(formData);
 
 export const createIncomeSourceForm: FormAction = async (_prev, formData) =>
   createIncomeSourceAction(formData);

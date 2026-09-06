@@ -1,13 +1,22 @@
 import { BillForm } from "@/components/bill-form";
 import { BillList } from "@/components/bill-list";
+import { MonthNav } from "@/components/month-nav";
 import { PageHeader, StatCard } from "@/components/ui";
-import { currentMonth, formatMonthLong, today } from "@/lib/dates";
+import { currentMonth, today } from "@/lib/dates";
 import { getBillsForMonth, listAccounts, listCategories } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
 
-export default function ContasPage() {
-  const month = currentMonth();
+export default async function ContasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mes?: string }>;
+}) {
+  const params = await searchParams;
+  // O mês vem da URL. Sem isso a tela ficava presa no mês corrente, e uma
+  // fatura que vence no mês seguinte simplesmente não existia para o usuário.
+  const month = /^\d{4}-\d{2}$/.test(params.mes ?? "") ? params.mes! : currentMonth();
+
   const bills = getBillsForMonth(month);
   const categories = listCategories();
   const accounts = listAccounts();
@@ -24,7 +33,8 @@ export default function ContasPage() {
     <>
       <PageHeader
         title="Contas a pagar"
-        subtitle={`${formatMonthLong(month)} · contas fixas e boletos. Não confundir com as contas bancárias, que ficam em Configurações.`}
+        subtitle="Contas fixas, boletos e faturas de cartão. As contas bancárias ficam em Configurações."
+        actions={<MonthNav month={month} basePath="/contas" />}
       />
 
       <div className="grid gap-xl sm:grid-cols-3">

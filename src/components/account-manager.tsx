@@ -7,6 +7,7 @@ import {
   PiggyBank,
   TrendingUp,
   Wallet,
+  Pencil,
   Trash2,
 } from "lucide-react";
 
@@ -17,6 +18,7 @@ import { Badge, Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
 import {
   createAccountForm,
   createIncomeSourceForm,
+  updateAccountForm,
   deleteAccountAction,
   deleteIncomeSourceAction,
 } from "@/lib/actions";
@@ -118,6 +120,39 @@ function SecaoContas({
   const [color, setColor] = useState(nextColor);
   const [nome, setNome] = useState("");
   const [kind, setKind] = useState<Exclude<AccountKind, "CARTAO">>("CORRENTE");
+  /** Conta sendo editada; null = formulário em modo de cadastro. */
+  const [editando, setEditando] = useState<AccountWithBalance | null>(null);
+
+  /**
+   * Entra em modo de edição carregando os valores atuais no formulário.
+   * O formulário é o MESMO — só muda a action e os valores iniciais. Duplicar
+   * um formulário de edição seria duas telas para manter em sincronia.
+   */
+  function editar(a: AccountWithBalance) {
+    setEditando(a);
+    setNome(a.name);
+    setColor(a.color);
+    setKind(a.kind === "CARTAO" ? "CORRENTE" : a.kind);
+    setBank(
+      a.bankIspb
+        ? {
+            ispb: a.bankIspb,
+            code: null,
+            name: a.bankName ?? a.name,
+            fullName: a.bankName ?? a.name,
+            logoUrl: a.logoUrl,
+          }
+        : null,
+    );
+  }
+
+  function cancelarEdicao() {
+    setEditando(null);
+    setNome("");
+    setColor(nextColor);
+    setKind("CORRENTE");
+    setBank(null);
+  }
 
   const totalCents = contas.reduce((acc, a) => acc + a.balanceCents, 0);
 
@@ -198,6 +233,15 @@ function SecaoContas({
                         </span>
                       </span>
 
+                      <button
+                        type="button"
+                        onClick={() => editar(a)}
+                        aria-label={`Editar ${a.name}`}
+                        className="cursor-pointer rounded-control p-sm text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground"
+                      >
+                        <Pencil className="size-4" aria-hidden="true" />
+                      </button>
+
                       <ActionButton
                         action={() => deleteAccountAction(a.id)}
                         confirm
@@ -233,11 +277,35 @@ function SecaoContas({
       </Card>
 
       <Card>
-        <CardTitle>Nova conta</CardTitle>
+        <CardTitle
+          hint={
+            editando ? (
+              <button
+                type="button"
+                onClick={cancelarEdicao}
+                className="cursor-pointer underline underline-offset-4 hover:text-foreground"
+              >
+                cancelar edição
+              </button>
+            ) : null
+          }
+        >
+          {editando ? `Editando ${editando.name}` : "Nova conta"}
+        </CardTitle>
 
-        <ActionForm action={createAccountForm} submitLabel="Cadastrar conta">
+        {/* key força o React a remontar o formulário ao trocar de registro.
+            Sem isso os campos não-controlados (saldo, cheque especial) manteriam
+            o valor digitado para OUTRA conta. */}
+        <ActionForm
+          key={editando?.id ?? "novo"}
+          action={editando ? updateAccountForm : createAccountForm}
+          submitLabel={editando ? "Salvar alterações" : "Cadastrar conta"}
+        >
           {(state) => (
             <>
+              {editando ? (
+                <input type="hidden" name="id" value={editando.id} />
+              ) : null}
               <input type="hidden" name="kind" value={kind} />
               <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
               <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
@@ -294,16 +362,25 @@ function SecaoContas({
               </Field>
 
               <Field
-                label="Saldo atual"
+                label={editando ? "Saldo inicial" : "Saldo atual"}
                 name="opening"
                 error={fieldError(state, "opening")}
-                hint="Quanto tem hoje. Se estiver no cheque especial, use - na frente (ex: -350,00)."
+                hint={
+                  editando
+                    ? "Este é o saldo de PARTIDA. O saldo de hoje é ele mais entradas menos saídas — mexer aqui reposiciona todo o histórico."
+                    : "Quanto tem hoje. Se estiver no cheque especial, use - na frente (ex: -350,00)."
+                }
               >
                 <Input
                   id="acc-opening"
                   name="opening"
                   inputMode="decimal"
                   placeholder="0,00"
+                  defaultValue={
+                    editando
+                      ? (editando.openingCents / 100).toFixed(2).replace(".", ",")
+                      : ""
+                  }
                   className="font-mono"
                 />
               </Field>
@@ -320,6 +397,11 @@ function SecaoContas({
                     name="overdraftLimit"
                     inputMode="decimal"
                     placeholder="2.000,00"
+                    defaultValue={
+                      editando?.overdraftLimitCents
+                        ? (editando.overdraftLimitCents / 100).toFixed(2).replace(".", ",")
+                        : ""
+                    }
                     className="font-mono"
                   />
                 </Field>
@@ -369,6 +451,31 @@ function SecaoCartoes({
   const [bank, setBank] = useState<Bank | null>(null);
   const [color, setColor] = useState(nextColor);
   const [nome, setNome] = useState("");
+  const [editando, setEditando] = useState<AccountWithBalance | null>(null);
+
+  function editar(c: AccountWithBalance) {
+    setEditando(c);
+    setNome(c.name);
+    setColor(c.color);
+    setBank(
+      c.bankIspb
+        ? {
+            ispb: c.bankIspb,
+            code: null,
+            name: c.bankName ?? c.name,
+            fullName: c.bankName ?? c.name,
+            logoUrl: c.logoUrl,
+          }
+        : null,
+    );
+  }
+
+  function cancelarEdicao() {
+    setEditando(null);
+    setNome("");
+    setColor(nextColor);
+    setBank(null);
+  }
 
   // Fatura é dívida: o saldo do cartão é negativo, e o valor devido é o módulo.
   const faturaTotal = cartoes.reduce((acc, a) => acc + Math.abs(a.balanceCents), 0);
@@ -452,6 +559,15 @@ function SecaoCartoes({
                         ) : null}
                       </span>
 
+                      <button
+                        type="button"
+                        onClick={() => editar(c)}
+                        aria-label={`Editar ${c.name}`}
+                        className="cursor-pointer rounded-control p-sm text-muted-foreground transition-colors duration-200 hover:bg-muted hover:text-foreground"
+                      >
+                        <Pencil className="size-4" aria-hidden="true" />
+                      </button>
+
                       <ActionButton
                         action={() => deleteAccountAction(c.id)}
                         confirm
@@ -493,11 +609,32 @@ function SecaoCartoes({
       </Card>
 
       <Card>
-        <CardTitle>Novo cartão</CardTitle>
+        <CardTitle
+          hint={
+            editando ? (
+              <button
+                type="button"
+                onClick={cancelarEdicao}
+                className="cursor-pointer underline underline-offset-4 hover:text-foreground"
+              >
+                cancelar edição
+              </button>
+            ) : null
+          }
+        >
+          {editando ? `Editando ${editando.name}` : "Novo cartão"}
+        </CardTitle>
 
-        <ActionForm action={createAccountForm} submitLabel="Cadastrar cartão">
+        <ActionForm
+          key={editando?.id ?? "novo"}
+          action={editando ? updateAccountForm : createAccountForm}
+          submitLabel={editando ? "Salvar alterações" : "Cadastrar cartão"}
+        >
           {(state) => (
             <>
+              {editando ? (
+                <input type="hidden" name="id" value={editando.id} />
+              ) : null}
               {/* Tipo fixo: este formulário só cadastra cartão. */}
               <input type="hidden" name="kind" value="CARTAO" />
               <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
@@ -548,6 +685,7 @@ function SecaoCartoes({
                   maxLength={4}
                   pattern="\d{4}"
                   placeholder="1234"
+                  defaultValue={editando?.last4 ?? ""}
                   className="w-24 font-mono"
                 />
               </Field>
@@ -563,6 +701,11 @@ function SecaoCartoes({
                   name="creditLimit"
                   inputMode="decimal"
                   placeholder="5.000,00"
+                  defaultValue={
+                    editando?.creditLimitCents
+                      ? (editando.creditLimitCents / 100).toFixed(2).replace(".", ",")
+                      : ""
+                  }
                   className="font-mono"
                 />
               </Field>
@@ -581,7 +724,7 @@ function SecaoCartoes({
                     min={1}
                     max={31}
                     required
-                    defaultValue={25}
+                    defaultValue={editando?.closingDay ?? 25}
                     className="font-mono"
                   />
                 </Field>
@@ -599,7 +742,7 @@ function SecaoCartoes({
                     min={1}
                     max={31}
                     required
-                    defaultValue={5}
+                    defaultValue={editando?.dueDay ?? 5}
                     className="font-mono"
                   />
                 </Field>
@@ -622,6 +765,11 @@ function SecaoCartoes({
                   name="opening"
                   inputMode="decimal"
                   placeholder="0,00"
+                  defaultValue={
+                    editando
+                      ? (editando.openingCents / 100).toFixed(2).replace(".", ",")
+                      : ""
+                  }
                   className="font-mono"
                 />
               </Field>

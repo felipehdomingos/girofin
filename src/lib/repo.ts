@@ -718,7 +718,9 @@ export function listAccountsWithBalance(month: string): AccountWithBalance[] {
  */
 export function getCardInvoice(cardId: string, month: string): number {
   const { start, end } = monthBounds(month);
-  const row = getDb()
+  const db = getDb();
+
+  const row = db
     .prepare(
       `SELECT COALESCE(SUM(amountCents), 0) AS total
          FROM transactions
@@ -727,7 +729,47 @@ export function getCardInvoice(cardId: string, month: string): number {
           AND date BETWEEN ? AND ?`,
     )
     .get(cardId, start, end) as { total: number };
-  return row.total;
+
+  /*
+   * A fatura que já estava aberta no dia do cadastro também conta.
+   *
+   * Quem cadastra um cartão informa "fatura em aberto hoje" — esse valor
+   * aparecia no saldo do cartão mas NÃO na lista de contas a pagar, porque
+   * aqui só se somava lançamento. Resultado: o cartão mostrava R$ 631,99 de
+   * dívida e não havia nada para pagar.
+   *
+   * O saldo de abertura pertence à primeira fatura que vence a partir da data
+   * do cadastro — calculada com a mesma regra de ciclo das compras, para não
+   * existirem duas noções de "em que fatura isso cai".
+   */
+  const card = db
+    .prepare(
+      `SELECT openingCents, closingDay, dueDay, date(createdAt) AS criadoEm
+         FROM accounts WHERE id = ? AND kind = 'CARTAO'`,
+    )
+    .get(cardId) as
+    | {
+        openingCents: number;
+        closingDay: number | null;
+        dueDay: number | null;
+        criadoEm: string;
+      }
+    | undefined;
+
+  if (!card || card.openingCents === 0 || !card.closingDay || !card.dueDay) {
+    return row.total;
+  }
+
+  const mesDaAbertura = firstInvoiceDueDate(
+    card.criadoEm,
+    card.closingDay,
+    card.dueDay,
+  ).slice(0, 7);
+
+  // openingCents de cartão é gravado negativo (dívida); a fatura é o módulo.
+  return month === mesDaAbertura
+    ? row.total + Math.abs(card.openingCents)
+    : row.total;
 }
 
 /**
@@ -802,7 +844,10 @@ export function createAccount(input: {
       id,
       input.name,
       input.kind,
-      input.openingCents,
+      // Fatura de cartão é SEMPRE dívida: guardamos negativo, independente de
+      // o usuário ter digitado com ou sem sinal. Se entrasse positivo, pagar a
+      // fatura (que soma de volta) aumentaria a dívida em vez de zerá-la.
+      input.kind === "CARTAO" ? -Math.abs(input.openingCents) : input.openingCents,
       // Fechamento/vencimento só existem em cartão. Guardar num débito seria
       // dado morto que a UI teria que aprender a ignorar.
       input.kind === "CARTAO" ? input.closingDay : null,
@@ -817,6 +862,59 @@ export function createAccount(input: {
       input.color,
     );
   return id;
+}
+
+/**
+ * Edita uma conta/cartão já cadastrado.
+ *
+ * `openingCents` é o saldo INICIAL, não o atual: mexer nele reposiciona todo o
+ * histórico, porque o saldo atual é sempre inicial + entradas − saídas. É
+ * exatamente o que se quer quando o cadastro saiu errado — corrigir a origem em
+ * vez de inventar um lançamento de acerto que sujaria o extrato.
+ */
+export function updateAccount(
+  id: string,
+  input: {
+    name: string;
+    kind: AccountKind;
+    openingCents: number;
+    closingDay: number | null;
+    dueDay: number | null;
+    last4: string | null;
+    creditLimitCents: number | null;
+    overdraftLimitCents: number | null;
+    bankIspb: string | null;
+    bankName: string | null;
+    logoUrl: string | null;
+    color: string;
+  },
+): void {
+  getDb()
+    .prepare(
+      `UPDATE accounts
+          SET name = ?, kind = ?, openingCents = ?, closingDay = ?, dueDay = ?,
+              last4 = ?, creditLimitCents = ?, overdraftLimitCents = ?,
+              bankIspb = ?, bankName = ?, logoUrl = ?, color = ?
+        WHERE id = ?`,
+    )
+    .run(
+      input.name,
+      input.kind,
+      // Fatura de cartão é SEMPRE dívida: guardamos negativo, independente de
+      // o usuário ter digitado com ou sem sinal. Se entrasse positivo, pagar a
+      // fatura (que soma de volta) aumentaria a dívida em vez de zerá-la.
+      input.kind === "CARTAO" ? -Math.abs(input.openingCents) : input.openingCents,
+      input.kind === "CARTAO" ? input.closingDay : null,
+      input.kind === "CARTAO" ? input.dueDay : null,
+      input.kind === "CARTAO" ? input.last4 : null,
+      input.kind === "CARTAO" ? input.creditLimitCents : null,
+      input.kind === "CARTAO" ? null : input.overdraftLimitCents,
+      input.bankIspb,
+      input.bankName,
+      input.logoUrl,
+      input.color,
+      id,
+    );
 }
 
 export function deleteAccount(id: string): void {

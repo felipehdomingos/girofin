@@ -12,6 +12,7 @@ import {
   ProgressBar,
   StatCard,
 } from "@/components/ui";
+import { BalancesCard } from "@/components/balances-card";
 import { EntryDialog } from "@/components/entry-dialog";
 import {
   currentMonth,
@@ -26,6 +27,7 @@ import {
   getMonthSummary,
   getOpenBillsTotal,
   listAccounts,
+  listAccountsWithBalance,
   listCategories,
   listIncomeSources,
   listTransactions,
@@ -50,6 +52,7 @@ export default function DashboardPage() {
   const recent = listTransactions({ month, limit: 8 });
   const progress = monthProgress(month);
   const accounts = listAccounts();
+  const accountsWithBalance = listAccountsWithBalance(month);
 
   const pending = bills.filter((b) => b.status !== "PAID");
   const overdue = bills.filter((b) => b.status === "OVERDUE");
@@ -115,6 +118,10 @@ export default function DashboardPage() {
               : "Nenhuma conta em aberto"
           }
         />
+      </div>
+
+      <div className="mt-xl">
+        <BalancesCard accounts={accountsWithBalance} />
       </div>
 
       <div className="mt-xl grid gap-xl lg:grid-cols-2">

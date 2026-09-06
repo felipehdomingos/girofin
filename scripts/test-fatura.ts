@@ -7,7 +7,7 @@
  *  3. Pagar a fatura NÃO conta como despesa nova (senão dobra o mês)
  *  4. Pagar a fatura tira o dinheiro da conta e zera o cartão
  */
-import { currentMonth, today } from "../src/lib/dates";
+import { currentMonth, firstInvoiceDueDate, today } from "../src/lib/dates";
 import { formatBRL } from "../src/lib/money";
 import {
   createAccount,
@@ -133,6 +133,47 @@ check(
   "fatura marcada como paga",
   contasDepois.find((b) => b.bill.id === `card:${cartaoId}`)?.status,
   "PAID",
+);
+
+console.log("\n== 5. fatura que já existia no cadastro entra na lista ==");
+/*
+ * Cadastrar um cartão informando "fatura em aberto hoje" precisa gerar uma
+ * conta a pagar. Antes o valor aparecia no saldo do cartão mas não em Contas a
+ * pagar — o cartão mostrava dívida e não havia nada para quitar.
+ */
+const cartaoComFatura = createAccount({
+  name: `Cartao com fatura ${marca}`,
+  kind: "CARTAO",
+  openingCents: 63199,
+  closingDay: 3,
+  dueDay: 13,
+  last4: null,
+  creditLimitCents: 120000,
+  overdraftLimitCents: null,
+  bankIspb: null,
+  bankName: null,
+  logoUrl: null,
+  color: "#9085e9",
+});
+
+const contaCartao = listAccountsWithBalance(mes).find((a) => a.id === cartaoComFatura);
+// Digitado sem sinal, guardado como dívida: pagar precisa somar em direção a zero.
+check("saldo de abertura guardado como dívida", contaCartao?.balanceCents, -63199);
+
+// Fecha dia 3 e vence dia 13: a fatura de abertura cai no mês seguinte ao
+// cadastro quando a compra é feita depois do fechamento.
+const mesAbertura = firstInvoiceDueDate(hoje, 3, 13).slice(0, 7);
+check(
+  "fatura de abertura tem o valor informado",
+  getCardInvoice(cartaoComFatura, mesAbertura),
+  63199,
+);
+check(
+  "fatura de abertura aparece em Contas a pagar",
+  getBillsForMonth(mesAbertura).some(
+    (b) => b.bill.id === `card:${cartaoComFatura}` && b.bill.amountCents === 63199,
+  ),
+  true,
 );
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
