@@ -1,0 +1,27 @@
+{
+  // Config separada só para compilar as regras de negócio e rodar em Node puro.
+  // O tsconfig principal tem noEmit + jsx:preserve (o Next cuida da compilação),
+  // e nenhum dos dois serve para executar um script direto.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2022",
+    "outDir": ".test-build",
+    "jsx": "react-jsx",
+    "incremental": false,
+    "plugins": []
+  },
+  // Só a lógica pura + o script. Ficam de fora:
+  //   actions.ts    -> "use server" e next/cache não existem fora do Next
+  //   bcb.ts        -> usa a opção `next` do fetch, que o Next injeta nos tipos
+  //   validation.ts -> nada aqui depende dela
+  "include": ["scripts/test-lib.ts", "src/lib/**/*.ts"],
+  "exclude": [
+    "src/lib/actions.ts",
+    "src/lib/validation.ts",
+    "src/lib/bcb.ts",
+    "src/lib/banks.ts"
+  ]
+}

@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Fonte da verdade visual: design-system/controle-financeiro/MASTER.md
+ * Estilo: Glassmorphism | Densidade 8/10 | Movimento 3/10 (sutil)
+ */
+
+:root {
+  --color-primary: #1e40af;
+  --color-on-primary: #ffffff;
+  --color-secondary: #3b82f6;
+  --color-on-secondary: #000000;
+  --color-accent: #059669;
+  --color-on-accent: #000000; /* preto sobre o verde = 5,57:1 (branco daria 3,77:1) */
+  --color-background: #0f172a;
+  --color-foreground: #ffffff;
+  --color-card: #192134;
+  --color-card-foreground: #ffffff;
+  --color-muted: #101a34;
+  --color-muted-foreground: #94a3b8; /* 7,0:1 sobre o fundo */
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-destructive: #dc2626;
+  --color-on-destructive: #ffffff; /* 4,85:1 */
+  --color-ring: #ffffff;
+
+  /* Texto de valor. Ver justificativa de contraste em tailwind.config.ts. */
+  --color-pos-text: #34d399;
+  --color-neg-text: #f87171;
+
+  --space-xs: 2px;
+  --space-sm: 4px;
+  --space-md: 8px;
+  --space-lg: 12px;
+  --space-xl: 16px;
+  --space-2xl: 24px;
+  --space-3xl: 32px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+}
+
+@layer base {
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    /* Anti-pattern do MASTER.md: "pure white backgrounds". O app é dark-only
+       por escolha; não há tema claro pela metade herdando do sistema. */
+    color-scheme: dark;
+  }
+
+  /* Foco visível em tudo que recebe teclado. A checklist proíbe
+     outline:none sem substituto — então o substituto é global. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Todo número de dinheiro alinha dígito com dígito. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Superfície de vidro — o efeito central do estilo escolhido. */
+  .glass {
+    background: color-mix(in oklab, var(--color-card) 82%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-md);
+  }
+}
+
+/*
+ * Movimento: só se o usuário aceitar.
+ * Item obrigatório da checklist de pré-entrega ("prefers-reduced-motion
+ * respected"). Vale para animação, transição e scroll suave.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

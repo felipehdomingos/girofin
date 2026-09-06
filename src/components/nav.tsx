@@ -1,0 +1,113 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  LayoutDashboard,
+  ReceiptText,
+  CalendarClock,
+  TrendingUp,
+  PiggyBank,
+  Settings,
+} from "lucide-react";
+
+/**
+ * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
+ * o polegar alcança sem reposicionar a mão).
+ *
+ * São 6 itens, um a mais que o teto de 5 da guideline de Navigation Patterns.
+ * A alternativa era deixar Configurações só no rodapé da sidebar — que é o que
+ * havia antes e simplesmente NÃO EXISTE no celular: não havia como cadastrar um
+ * banco pelo telefone. Item extra com ícone e rótulo custa menos que uma tela
+ * inalcançável. A 375px cada item ainda fica com ~62px de largura, acima do
+ * mínimo de 44px para alvo de toque.
+ */
+
+const ITEMS = [
+  { href: "/", label: "Resumo", icon: LayoutDashboard },
+  { href: "/lancamentos", label: "Lançar", icon: ReceiptText },
+  { href: "/contas", label: "A pagar", icon: CalendarClock },
+  { href: "/investimentos", label: "Investir", icon: TrendingUp },
+  { href: "/economia", label: "Economia", icon: PiggyBank },
+  { href: "/configuracoes", label: "Config", icon: Settings },
+] as const;
+
+export function Nav() {
+  const pathname = usePathname();
+
+  // "/" só casa exato; as outras casam com as subrotas.
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname.startsWith(href);
+
+  return (
+    <>
+      {/* ---------------------------------------------------------- desktop */}
+      <nav
+        aria-label="Navegação principal"
+        className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-muted/40 px-lg py-xl lg:flex"
+      >
+        <div className="mb-2xl px-md">
+          <p className="text-sm font-semibold tracking-tight">Controle Financeiro</p>
+          <p className="mt-xs text-xs text-muted-foreground">Seus dados, nesta máquina</p>
+        </div>
+
+        <ul className="flex flex-col gap-xs">
+          {ITEMS.map(({ href, label, icon: Icon }) => {
+            const active = isActive(href);
+            return (
+              <li key={href}>
+                <Link
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={`flex cursor-pointer items-center gap-lg rounded-control px-lg py-md text-sm transition-colors duration-200 ${
+                    active
+                      ? "bg-primary/25 font-semibold text-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {/* aria-hidden: o ícone é decorativo, o texto ao lado já nomeia
+                      o link. Sem isso o leitor de tela anuncia o nome duas vezes. */}
+                  <Icon className="size-5 shrink-0" aria-hidden="true" />
+                  {href === "/configuracoes" ? "Configurações" : label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      {/* ----------------------------------------------------------- mobile */}
+      <nav
+        aria-label="Navegação principal"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 backdrop-blur-glass lg:hidden"
+        /* Respeita a barra de gestos do iPhone — sem isso o último item fica
+           embaixo do indicador do sistema. */
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <ul className="flex">
+          {ITEMS.map(({ href, label, icon: Icon }) => {
+            const active = isActive(href);
+            return (
+              <li key={href} className="flex-1">
+                <Link
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  /* min-h-[56px]: acima do mínimo de 44x44px para alvo de toque. */
+                  className={`flex min-h-[56px] cursor-pointer flex-col items-center justify-center gap-xs px-xs py-md text-[10px] transition-colors duration-200 ${
+                    active ? "font-semibold text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  <Icon
+                    className={`size-5 ${active ? "text-accent" : ""}`}
+                    aria-hidden="true"
+                  />
+                  {label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    </>
+  );
+}
