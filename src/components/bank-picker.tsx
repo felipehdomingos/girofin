@@ -18,10 +18,14 @@ export function BankPicker({
   banks,
   onSelect,
   selected,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
 }: {
   banks: Bank[];
   onSelect: (bank: Bank | null) => void;
   selected: Bank | null;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [aberto, setAberto] = useState(false);
@@ -70,7 +74,10 @@ export function BankPicker({
       <div className="flex items-center gap-md rounded-control border border-border bg-muted px-lg">
         <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <input
+          id="bank"
           type="text"
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={ariaInvalid || undefined}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -205,16 +212,26 @@ export function ColorPicker({
   value,
   onChange,
   palette,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
 }: {
   name: string;
   value: string;
   onChange: (hex: string) => void;
   palette: readonly string[];
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
 }) {
   return (
     <>
       <input type="hidden" name={name} value={value} />
-      <div role="radiogroup" aria-label="Cor" className="flex flex-wrap gap-md">
+      <div
+        role="radiogroup"
+        aria-label="Cor"
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid || undefined}
+        className="flex flex-wrap gap-md"
+      >
         {palette.map((hex, i) => {
           const ativa = hex.toLowerCase() === value.toLowerCase();
           return (
@@ -225,10 +242,7 @@ export function ColorPicker({
               aria-checked={ativa}
               aria-label={`Cor ${i + 1}`}
               onClick={() => onChange(hex)}
-              /* size-9 = 36px. Abaixo de 44px do mínimo de toque, mas são
-                 alvos lado a lado numa grade — o padrão de seletor de cor —
-                 e aumentar mais tomaria a coluna inteira do formulário. */
-              className={`flex size-9 cursor-pointer items-center justify-center rounded-full transition-transform duration-200 ${
+              className={`flex size-11 cursor-pointer items-center justify-center rounded-full transition-transform duration-200 ${
                 ativa ? "ring-2 ring-ring ring-offset-2 ring-offset-card" : ""
               }`}
               style={{ backgroundColor: hex }}

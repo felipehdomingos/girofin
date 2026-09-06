@@ -56,7 +56,7 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
         className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-muted/40 px-lg py-xl lg:flex"
       >
         <div className="mb-2xl px-md">
-          <p className="text-sm font-semibold tracking-tight">GranaFlow</p>
+          <p className="text-sm font-semibold tracking-tight">GiroFin</p>
           <p className="mt-xs text-xs text-muted-foreground">Seus dados, nesta máquina</p>
         </div>
 

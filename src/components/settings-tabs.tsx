@@ -73,6 +73,8 @@ export function SettingsTabs({
               key={id}
               type="button"
               role="tab"
+              id={`tab-${id}`}
+              aria-controls="panel-configuracoes"
               aria-selected={ativa}
               onClick={() => setAba(id)}
               className={`flex shrink-0 cursor-pointer items-center gap-md border-b-2 px-lg py-md text-sm transition-colors duration-200 ${
@@ -88,49 +90,56 @@ export function SettingsTabs({
         })}
       </div>
 
-      {aba === "contas" ? (
-        <AccountManager
-          show="contas"
-          accounts={accounts}
-          banks={banks}
-          incomeSources={incomeSources}
-          incomeThisMonth={incomeThisMonth}
-          nextAccountColor={nextAccountColor}
-          nextSourceColor={nextSourceColor}
-        />
-      ) : null}
+      <div
+        role="tabpanel"
+        id="panel-configuracoes"
+        aria-labelledby={`tab-${aba}`}
+        tabIndex={0}
+      >
+        {aba === "contas" ? (
+          <AccountManager
+            show="contas"
+            accounts={accounts}
+            banks={banks}
+            incomeSources={incomeSources}
+            incomeThisMonth={incomeThisMonth}
+            nextAccountColor={nextAccountColor}
+            nextSourceColor={nextSourceColor}
+          />
+        ) : null}
 
-      {aba === "cartoes" ? (
-        <AccountManager
-          show="cartoes"
-          accounts={accounts}
-          banks={banks}
-          incomeSources={incomeSources}
-          incomeThisMonth={incomeThisMonth}
-          nextAccountColor={nextAccountColor}
-          nextSourceColor={nextSourceColor}
-        />
-      ) : null}
+        {aba === "cartoes" ? (
+          <AccountManager
+            show="cartoes"
+            accounts={accounts}
+            banks={banks}
+            incomeSources={incomeSources}
+            incomeThisMonth={incomeThisMonth}
+            nextAccountColor={nextAccountColor}
+            nextSourceColor={nextSourceColor}
+          />
+        ) : null}
 
-      {aba === "empresas" ? (
-        <AccountManager
-          show="empresas"
-          accounts={accounts}
-          banks={banks}
-          incomeSources={incomeSources}
-          incomeThisMonth={incomeThisMonth}
-          nextAccountColor={nextAccountColor}
-          nextSourceColor={nextSourceColor}
-        />
-      ) : null}
+        {aba === "empresas" ? (
+          <AccountManager
+            show="empresas"
+            accounts={accounts}
+            banks={banks}
+            incomeSources={incomeSources}
+            incomeThisMonth={incomeThisMonth}
+            nextAccountColor={nextAccountColor}
+            nextSourceColor={nextSourceColor}
+          />
+        ) : null}
 
-      {aba === "categorias" ? (
-        <CategoryManager
-          categories={categories}
-          spentByCategory={spentByCategory}
-          nextColor={nextCategoryColor}
-        />
-      ) : null}
+        {aba === "categorias" ? (
+          <CategoryManager
+            categories={categories}
+            spentByCategory={spentByCategory}
+            nextColor={nextCategoryColor}
+          />
+        ) : null}
+      </div>
     </>
   );
 }

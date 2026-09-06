@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 
 type Mode = "login" | "register" | "forgot" | "reset";
 
+const AUTH_CONTROL =
+  "w-full rounded-control border border-border bg-muted px-lg py-md text-base transition-colors duration-200 focus-visible:border-secondary focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-1";
+
 export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -63,7 +66,7 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
     <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
       <section className="glass w-full max-w-md p-2xl">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
-          GranaFlow
+          GiroFin
         </p>
         <h1 className="mt-lg text-2xl font-semibold">{copy[0]}</h1>
         <p className="mt-sm text-sm text-muted-foreground">{copy[1]}</p>
@@ -78,7 +81,7 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
                 maxLength={80}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full rounded-control border border-border bg-muted px-lg py-md"
+                className={AUTH_CONTROL}
               />
             </label>
           ) : null}
@@ -90,7 +93,7 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="w-full rounded-control border border-border bg-muted px-lg py-md"
+                className={AUTH_CONTROL}
               />
             </label>
           ) : null}
@@ -104,18 +107,27 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
                 maxLength={200}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="w-full rounded-control border border-border bg-muted px-lg py-md"
+                className={AUTH_CONTROL}
               />
               {mode !== "login" ? (
                 <span className="text-xs text-muted-foreground">Use pelo menos 10 caracteres.</span>
               ) : null}
             </label>
           ) : null}
-          {error ? <p className="rounded-control bg-destructive/10 p-lg text-sm text-neg">{error}</p> : null}
-          {message ? <p className="rounded-control bg-accent/10 p-lg text-sm text-pos">{message}</p> : null}
+          {error ? (
+            <p role="alert" className="rounded-control bg-destructive/10 p-lg text-sm text-neg">
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p role="status" className="rounded-control bg-accent/10 p-lg text-sm text-pos">
+              {message}
+            </p>
+          ) : null}
           <button
+            type="submit"
             disabled={pending}
-            className="rounded-control bg-accent px-xl py-md text-sm font-semibold text-on-accent disabled:opacity-50"
+            className="cursor-pointer rounded-control bg-accent px-xl py-md text-sm font-semibold text-on-accent transition-colors duration-200 hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {pending ? "Aguarde..." : copy[0]}
           </button>

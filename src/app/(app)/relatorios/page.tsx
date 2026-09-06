@@ -236,7 +236,9 @@ export default async function RelatoriosPage({
                           <span
                             aria-hidden="true"
                             className="size-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: c.color ?? "#94a3b8" }}
+                            style={{
+                              backgroundColor: c.color ?? "var(--color-muted-foreground)",
+                            }}
                           />
                           {c.name ?? "Sem conta"}
                         </span>

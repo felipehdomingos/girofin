@@ -120,6 +120,8 @@ export function EntryDialog({
                   key={id}
                   type="button"
                   role="tab"
+                  id={`tab-lancamento-${id}`}
+                  aria-controls="panel-lancamento"
                   aria-selected={tab === id}
                   onClick={() => setTab(id)}
                   className={`cursor-pointer border-b-2 px-lg py-md text-sm transition-colors duration-200 ${
@@ -133,7 +135,12 @@ export function EntryDialog({
               ))}
             </div>
 
-            <div className="p-2xl">
+            <div
+              id="panel-lancamento"
+              role="tabpanel"
+              aria-labelledby={`tab-lancamento-${tab}`}
+              className="p-2xl"
+            >
               {/*
                 Sem conta cadastrada não há como lançar nada de forma íntegra:
                 todo gasto sai de algum lugar e toda entrada cai em algum lugar.

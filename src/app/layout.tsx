@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 
-import { Nav } from "@/components/nav";
-import { listAccounts } from "@/lib/repo";
 import "./globals.css";
 
 /**
@@ -29,9 +27,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GranaFlow",
+  title: "GiroFin",
   description:
-    "GranaFlow: lançamento de gastos, contas a pagar, projeção de investimentos e orientação para economizar.",
+    "GiroFin: lançamento de gastos, contas a pagar, projeção de investimentos e orientação para economizar.",
 };
 
 export const viewport: Viewport = {
@@ -45,32 +43,10 @@ export const viewport: Viewport = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // O item "Cartões" só existe depois que há cartão cadastrado — menu com
-  // seção vazia é ruído. Leitura barata: uma consulta de contas por navegação.
-  const hasCards = listAccounts().some((a) => a.kind === "CARTAO");
   return (
     <html lang="pt-BR" className={`${plexSans.variable} ${plexMono.variable}`}>
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
-        {/* Primeiro item do DOM: quem navega por teclado pula a navegação
-            inteira em vez de tabular por ela em toda página. */}
-        <a
-          href="#conteudo"
-          className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:font-semibold focus:text-on-accent"
-        >
-          Pular para o conteúdo
-        </a>
-
-        <div className="lg:flex">
-          <Nav hasCards={hasCards} />
-          <main
-            id="conteudo"
-            /* pb-24 no mobile: a barra inferior é fixa e comeria o último card
-               ("No content hidden behind fixed navbars"). */
-            className="min-w-0 flex-1 px-xl pb-24 pt-xl lg:px-3xl lg:pb-3xl"
-          >
-            {children}
-          </main>
-        </div>
+        {children}
       </body>
     </html>
   );

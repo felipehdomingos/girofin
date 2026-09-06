@@ -7,6 +7,7 @@ const staticDir = path.join(root, ".next", "static");
 const standaloneStaticDir = path.join(standalone, ".next", "static");
 const publicDir = path.join(root, "public");
 const standalonePublicDir = path.join(standalone, "public");
+const standaloneDataDir = path.join(standalone, "data");
 
 if (!fs.existsSync(standalone)) {
   throw new Error("Standalone build nao encontrado em .next/standalone.");
@@ -16,3 +17,7 @@ fs.cpSync(staticDir, standaloneStaticDir, { recursive: true });
 if (fs.existsSync(publicDir)) {
   fs.cpSync(publicDir, standalonePublicDir, { recursive: true });
 }
+
+// Output tracing can include the local SQLite file because the development
+// mode resolves it at runtime. Never ship a user's financial database.
+fs.rmSync(standaloneDataDir, { recursive: true, force: true });

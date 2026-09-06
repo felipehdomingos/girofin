@@ -45,7 +45,7 @@ const AXIS_TICK = { fill: CHART_INK.axis, fontSize: 11 };
 
 function TooltipBox({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-control border border-border bg-[#0f172a] px-lg py-md text-xs shadow-lg">
+    <div className="rounded-control border border-border bg-background px-lg py-md text-xs shadow-lg">
       {children}
     </div>
   );

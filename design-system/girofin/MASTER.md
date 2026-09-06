@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** GranaFlow
+**Project:** GiroFin
 **Generated:** 2026-09-05 20:03:34
 **Category:** Personal Finance Tracker
 **Design Dials:** Variance 4/10 (Balanced / Modern) | Motion 3/10 (Subtle) | Density 8/10 (Dense / Dashboard)

@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { authConfigured } from "./auth-db";
 import { paletteColor } from "./palette";
 
 /**
@@ -21,12 +22,35 @@ import { paletteColor } from "./palette";
  * Caminho do banco. `FINANCEIRO_DB` permite apontar para outro arquivo —
  * usado para demonstração e teste sem encostar nos seus dados reais, e útil
  * também para abrir um backup antigo sem sobrescrever o atual.
+ *
+ * A próxima etapa da migração multiusuário será exigir um `user_id` da sessão
+ * para todas as leituras e escritas quando `authConfigured()` estiver ativo.
  */
 const DB_PATH =
   process.env.FINANCEIRO_DB ?? path.join(process.cwd(), "data", "financeiro.db");
 const DATA_DIR = path.dirname(DB_PATH);
 
+export function resolveFinanceDbPath(userId?: string): string {
+  if (!userId || !authConfigured()) {
+    return DB_PATH;
+  }
+
+  return path.join(path.dirname(DB_PATH), "users", userId, "financeiro.db");
+}
+
 let instance: DatabaseSync | null = null;
+const userInstances = new Map<string, DatabaseSync>();
+
+function assertFinanceStorageMode(): void {
+  if (
+    (process.env.NODE_ENV === "production" || authConfigured()) &&
+    process.env.ALLOW_UNSCOPED_FINANCEIRO_DB !== "true"
+  ) {
+    throw new Error(
+      "Armazenamento financeiro compartilhado desativado: configure o repositório PostgreSQL multiusuário ou habilite o modo local explicitamente.",
+    );
+  }
+}
 
 /**
  * O migrate é idempotente e roda na primeira conexão do processo.
@@ -350,12 +374,18 @@ function migrateTransactionNature(db: DatabaseSync): void {
   }
 }
 
-export function getDb(): DatabaseSync {
-  if (instance) return instance;
+function openDbAtPath(dbPath: string): DatabaseSync {
+  if (dbPath === DB_PATH) {
+    if (instance) return instance;
+  } else {
+    const cached = userInstances.get(dbPath);
+    if (cached) return cached;
+  }
 
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+  const dir = path.dirname(dbPath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
-  const db = new DatabaseSync(DB_PATH);
+  const db = new DatabaseSync(dbPath);
   migrate(db);
   migrateTransactionNature(db);
   seedIfEmpty(db);
@@ -363,8 +393,35 @@ export function getDb(): DatabaseSync {
   // fonte de renda nenhuma, e sem isso a tela de entrada abriria com o select
   // vazio. Esta função é idempotente.
   seedIncomeSources(db);
-  instance = db;
+
+  if (dbPath === DB_PATH) {
+    instance = db;
+  } else {
+    userInstances.set(dbPath, db);
+  }
+
   return db;
+}
+
+export function getDbForUser(userId: string): DatabaseSync {
+  if (!userId) {
+    throw new Error("É necessário informar o usuário para abrir o banco financeiro escopado.");
+  }
+  return openDbAtPath(resolveFinanceDbPath(userId));
+}
+
+export async function getDbForCurrentUser(): Promise<DatabaseSync> {
+  const { currentUserId } = await import("./auth-http");
+  const userId = await currentUserId();
+  if (!userId) {
+    throw new Error("Sessão de usuário ausente para acessar o repositório financeiro.");
+  }
+  return getDbForUser(userId);
+}
+
+export function getDb(): DatabaseSync {
+  assertFinanceStorageMode();
+  return openDbAtPath(DB_PATH);
 }
 
 /** IDs curtos e ordenáveis por tempo, sem dependência externa. */

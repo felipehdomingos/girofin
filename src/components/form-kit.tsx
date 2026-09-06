@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { cloneElement, isValidElement, useActionState, type ReactNode } from "react";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 
 import type { ActionResult } from "@/lib/validation";
@@ -32,6 +32,16 @@ export function Field({
 }) {
   const hintId = hint ? `${name}-hint` : undefined;
   const errorId = error?.length ? `${name}-error` : undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
+  const control = isValidElement<{
+    "aria-describedby"?: string;
+    "aria-invalid"?: boolean;
+  }>(children)
+    ? cloneElement(children, {
+        "aria-describedby": describedBy,
+        "aria-invalid": error?.length ? true : undefined,
+      })
+    : children;
 
   return (
     <div className="flex flex-col gap-sm">
@@ -48,7 +58,7 @@ export function Field({
           {hint}
         </p>
       ) : null}
-      {children}
+      {control}
       {error?.length ? (
         <p id={errorId} className="text-[11px] text-neg">
           {error[0]}
@@ -59,7 +69,7 @@ export function Field({
 }
 
 const CONTROL =
-  "w-full rounded-control border border-border bg-muted px-lg py-md text-sm text-foreground placeholder:text-muted-foreground/60 transition-colors duration-200";
+  "w-full rounded-control border border-border bg-muted px-lg py-md text-base text-foreground placeholder:text-muted-foreground/60 transition-colors duration-200 focus-visible:border-secondary focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-1";
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${CONTROL} ${props.className ?? ""}`} />;
