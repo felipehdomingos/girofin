@@ -11,7 +11,8 @@
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node scripts/run-tests.cjs"
+    "test": "tsc -p tsconfig.test.json && node scripts/run-tests.cjs",
+    "db:apply": "node scripts/apply-postgres-schema.cjs"
   },
   "dependencies": {
     "@types/pg": "^8.23.1",

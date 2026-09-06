@@ -108,6 +108,16 @@ Esta camada ainda nao protege os dados financeiros existentes. A proxima etapa
 e migrar as tabelas financeiras para PostgreSQL, adicionar `user_id` e exigir
 sessao em cada leitura/escrita antes de ativar a protecao global das rotas.
 
+O schema inicial dessa migracao esta em `db/postgres-schema.sql`. Com um
+PostgreSQL de staging criado, configure `DATABASE_URL` e execute:
+
+```bash
+npm run db:apply
+```
+
+O comando e idempotente e nao apaga dados. O importador do SQLite sera usado
+somente depois de o usuario de destino ser criado e o schema validado.
+
 ## Custo e controle
 
 Antes de criar recursos, confira no portal o custo estimado para a regiao. Nao
