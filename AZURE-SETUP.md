@@ -85,6 +85,29 @@ O `DATABASE_URL`, `AUTH_SECRET` e as credenciais de e-mail ainda nao sao usados
 pela aplicacao nesta etapa; eles serao ativados junto com as implementacoes
 correspondentes para evitar uma falsa sensacao de seguranca.
 
+## Identidade e API
+
+Com `DATABASE_URL` e `AUTH_SECRET` configurados, a primeira camada de
+autenticacao fica disponivel em:
+
+```text
+/cadastro
+/login
+/recuperar-senha
+/redefinir-senha?token=...
+/api/docs
+/api/openapi.json
+```
+
+O reset de senha usa Resend quando `RESEND_API_KEY`, `EMAIL_FROM` e `APP_URL`
+estao definidos. Em desenvolvimento sem esses valores, o link e impresso no
+console; em producao a operacao falha explicitamente, sem expor o token na
+resposta HTTP.
+
+Esta camada ainda nao protege os dados financeiros existentes. A proxima etapa
+e migrar as tabelas financeiras para PostgreSQL, adicionar `user_id` e exigir
+sessao em cada leitura/escrita antes de ativar a protecao global das rotas.
+
 ## Custo e controle
 
 Antes de criar recursos, confira no portal o custo estimado para a regiao. Nao
