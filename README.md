@@ -1,4 +1,4 @@
-# Controle Financeiro
+# GranaFlow
 
 Lançamento diário de gastos com categorização automática, contas a pagar e
 boletos, projeção de investimentos com taxas reais do Banco Central, e um motor
@@ -190,7 +190,7 @@ Consequências práticas:
 
 ## Design
 
-O visual segue `design-system/controle-financeiro/MASTER.md`, gerado pela skill
+O visual segue `design-system/granaflow/MASTER.md`, gerado pela skill
 **ui-ux-pro-max** e revisado. Esse arquivo documenta o que foi mantido da
 saída da skill e o que foi sobrescrito, sempre com o motivo.
 

@@ -63,7 +63,7 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
     <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
       <section className="glass w-full max-w-md p-2xl">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
-          Controle Financeiro
+          GranaFlow
         </p>
         <h1 className="mt-lg text-2xl font-semibold">{copy[0]}</h1>
         <p className="mt-sm text-sm text-muted-foreground">{copy[1]}</p>

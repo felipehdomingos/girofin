@@ -17,7 +17,7 @@ export function GET() {
 
     return NextResponse.json({
       ok: true,
-      service: "controle-financeiro",
+      service: "granaflow",
       environment: process.env.APP_ENV ?? "local",
       storage: "sqlite-local",
     });
@@ -25,7 +25,7 @@ export function GET() {
     return NextResponse.json(
       {
         ok: false,
-        service: "controle-financeiro",
+        service: "granaflow",
       },
       { status: 503 },
     );

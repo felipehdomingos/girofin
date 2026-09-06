@@ -29,9 +29,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Controle Financeiro",
+  title: "GranaFlow",
   description:
-    "Lançamento de gastos, contas a pagar, projeção de investimentos e orientação para economizar.",
+    "GranaFlow: lançamento de gastos, contas a pagar, projeção de investimentos e orientação para economizar.",
 };
 
 export const viewport: Viewport = {

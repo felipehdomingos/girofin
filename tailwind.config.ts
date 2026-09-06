@@ -1,7 +1,7 @@
 import type { Config } from "tailwindcss";
 
 /**
- * Tokens vindos de design-system/controle-financeiro/MASTER.md.
+ * Tokens vindos de design-system/granaflow/MASTER.md.
  *
  * Toda cor aqui aponta para uma CSS variable definida em globals.css. Componente
  * nenhum escreve hex direto — trocar o tema é editar um arquivo, não caçar hex

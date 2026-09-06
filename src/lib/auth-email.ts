@@ -28,7 +28,7 @@ export async function sendPasswordResetEmail(input: {
     body: JSON.stringify({
       from,
       to: [input.email],
-      subject: "Redefinição de senha · Controle Financeiro",
+      subject: "Redefinição de senha · GranaFlow",
       text:
         `Olá, ${input.name}.\n\n` +
         `Use este link para redefinir sua senha (válido por 1 hora):\n` +

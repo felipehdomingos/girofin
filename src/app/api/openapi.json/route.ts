@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 const document = {
   openapi: "3.0.3",
   info: {
-    title: "Controle Financeiro API",
+    title: "GranaFlow API",
     version: "1.0.0",
-    description: "API de identidade e dados financeiros do Controle Financeiro.",
+    description: "API de identidade e dados financeiros do GranaFlow.",
   },
   servers: [{ url: "/api/v1" }],
   tags: [{ name: "Auth", description: "Cadastro e sessões" }],
