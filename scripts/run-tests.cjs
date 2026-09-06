@@ -40,3 +40,6 @@ require("../.test-build/scripts/test-lib.js");
 require("../.test-build/scripts/test-fatura.js");
 // Leitura de fatura de cartão: texto -> lançamentos, sem depender de PDF.
 require("../.test-build/scripts/test-invoice.js");
+// Um mês inteiro de uso real: salário, gastos do dia, conta fixa, cartão,
+// estorno e boleto agendado — tudo tem que fechar no saldo no fim.
+require("../.test-build/scripts/test-amarracao.js");

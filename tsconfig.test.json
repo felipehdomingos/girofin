@@ -21,6 +21,7 @@
     "scripts/test-lib.ts",
     "scripts/test-fatura.ts",
     "scripts/test-invoice.ts",
+    "scripts/test-amarracao.ts",
     "src/lib/**/*.ts"
   ],
   "exclude": [

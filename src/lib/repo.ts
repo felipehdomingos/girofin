@@ -278,9 +278,16 @@ export function createTransaction(input: NewTransaction): string {
   const db = getDb();
   const insert = db.prepare(INSERT_TX);
 
-  // Entrada nunca passa pelo ciclo de fatura — salário não cai em fatura.
-  const account =
-    input.type === "EXPENSE" && input.accountId ? getAccount(input.accountId) : null;
+  /*
+   * O ciclo da fatura vale para tudo que acontece DENTRO do cartão — inclusive
+   * entrada, que no cartão só existe como estorno. Um estorno lançado no dia 12
+   * abate a fatura em que a compra caiu, não a do mês corrente: sem passar pelo
+   * ciclo, ele descontava de uma fatura e a compra ficava em outra.
+   *
+   * Numa carteira comum, entrada não tem ciclo nenhum — salário não cai em
+   * fatura —, e resolveCashOutDate já devolve a própria data.
+   */
+  const account = input.accountId ? getAccount(input.accountId) : null;
   const { date: firstDate, purchaseDate } = resolveCashOutDate(input.date, account);
 
   if (input.nature !== "PARCELADO") {
@@ -850,11 +857,22 @@ export function getCardInvoice(cardId: string, month: string): number {
   const { start, end } = monthBounds(month);
   const db = getDb();
 
+  /*
+   * Compras somam, estornos abatem.
+   *
+   * Uma ENTRADA no cartão só existe como devolução da loja — o dinheiro volta
+   * para o limite. Contar só as despesas deixaria a fatura acima do que o banco
+   * cobra de verdade, e o saldo do cartão (que já desconta a entrada) nunca
+   * bateria com o valor a pagar.
+   */
   const row = db
     .prepare(
-      `SELECT COALESCE(SUM(amountCents), 0) AS total
+      `SELECT COALESCE(
+                SUM(CASE WHEN type = 'EXPENSE' THEN amountCents ELSE -amountCents END),
+                0
+              ) AS total
          FROM transactions
-        WHERE accountId = ? AND type = 'EXPENSE'
+        WHERE accountId = ?
           AND transferToAccountId IS NULL
           AND date BETWEEN ? AND ?`,
     )

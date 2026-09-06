@@ -480,9 +480,34 @@ export async function importInvoiceAction(
 
     let criados = 0;
     let parcelasFuturas = 0;
+    let estornos = 0;
 
     for (const l of linhas) {
-      if (l.amountCents <= 0 || !l.description.trim() || !l.categoryId) continue;
+      if (l.amountCents === 0 || !l.description.trim() || !l.categoryId) continue;
+
+      /*
+       * Estorno: a loja devolveu o dinheiro. Entra como ENTRADA no cartão, que
+       * é literalmente o que acontece — o valor volta para o limite e abate a
+       * fatura. Lançar como despesa negativa não daria certo: os totais do mês
+       * somam despesas, e um valor negativo no meio deles some do relatório em
+       * vez de aparecer como devolução.
+       */
+      if (l.amountCents < 0) {
+        repo.createTransaction({
+          type: "INCOME",
+          amountCents: Math.abs(l.amountCents),
+          date: l.purchaseDate,
+          description: l.description,
+          categoryId: l.categoryId,
+          nature: "VISTA",
+          accountId: cardId,
+          incomeSourceId: null,
+          method: "CREDITO",
+          notes: null,
+        });
+        estornos++;
+        continue;
+      }
 
       const restantes =
         l.installmentNo && l.installmentTotal
@@ -541,6 +566,9 @@ export async function importInvoiceAction(
         `${criados} ${criados === 1 ? "compra importada" : "compras importadas"}` +
         (parcelasFuturas > 0
           ? ` · ${parcelasFuturas} parcela${parcelasFuturas === 1 ? "" : "s"} agendada${parcelasFuturas === 1 ? "" : "s"} para os próximos meses`
+          : "") +
+        (estornos > 0
+          ? ` · ${estornos} estorno${estornos === 1 ? "" : "s"} abatido${estornos === 1 ? "" : "s"} da fatura`
           : ""),
     };
   } catch (e) {

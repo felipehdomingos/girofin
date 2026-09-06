@@ -7,23 +7,40 @@ import { parseBRLToCents } from "./money";
  * invoice-import.tsx) e esta função fica pura — testável sem arquivo, sem
  * senha e sem dependência de PDF.
  *
- * Não existe padrão de fatura no Brasil: cada emissor formata do seu jeito.
- * Por isso o resultado NUNCA é salvo direto — vai para uma tela de conferência.
- * Uma fatura mal interpretada não dá erro, ela envenena meses de histórico de
- * uma vez, e isso é bem pior que o trabalho de revisar.
+ * Calibrada em faturas REAIS de dois emissores, que formatam de jeitos bem
+ * diferentes:
+ *
+ *   C6 Bank:  "09 set CAMILA IMPORTS - Parcela 11/12 530,89"
+ *             mês por extenso, parcela rotulada
+ *
+ *   Itaú:     "24/07 IFD*iFood 5,95 21/06 MERCADOLIVRE*MERCA02/02 24,84"
+ *             DUAS transações na mesma linha (impressas em duas colunas),
+ *             parcela colada no fim da descrição, sem espaço
+ *
+ * Por isso a varredura é GLOBAL dentro de cada linha em vez de assumir uma
+ * transação por linha: no Itaú, assumir uma por linha perderia metade da
+ * fatura silenciosamente.
+ *
+ * O resultado NUNCA é salvo direto — vai para conferência. Não existe padrão
+ * de fatura no Brasil, e leitura errada não dá erro: ela envenena meses de
+ * histórico de uma vez.
  */
 
 export interface InvoiceLine {
-  /** "DD/MM" como veio na fatura. */
-  rawDate: string;
-  /** Data completa, com o ano inferido do período da fatura. */
+  /** Data da compra, com o ano inferido. "YYYY-MM-DD". */
   date: string;
   description: string;
+  /**
+   * Positivo em compra, NEGATIVO em estorno.
+   *
+   * O estorno é dinheiro que a loja devolveu: ele abate a fatura. Ignorá-lo
+   * faria o total importado ficar acima do que se paga de verdade — nesta
+   * fatura do Itaú, R$ 150,18 acima.
+   */
   amountCents: number;
-  /** Parcela atual, quando a linha indica "3/10". */
   installmentNo: number | null;
   installmentTotal: number | null;
-  /** Linha original, para conferência. */
+  /** Trecho original, para conferência. */
   raw: string;
 }
 
@@ -31,50 +48,74 @@ export interface InvoiceParseResult {
   lines: InvoiceLine[];
   /** Linhas com cara de lançamento que não deu para interpretar. */
   ignoradas: string[];
-  /** Total somado das linhas reconhecidas. */
   totalCents: number;
 }
 
+const MESES: Record<string, number> = {
+  jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
+};
+
 /**
- * Termos que aparecem em faturas mas NÃO são compras.
+ * Termos que aparecem na fatura mas NÃO entram na conta de jeito nenhum.
  *
- * Pagamento da fatura anterior e estorno reduzem a dívida; importá-los como
- * gasto contaria dinheiro que não saiu. Encargos e juros são gastos reais, mas
- * de natureza diferente — ficam de fora para o usuário decidir lançá-los à mão.
+ * O pagamento da fatura anterior é o caso central: ele quita a dívida, não a
+ * cria. Importado como compra, contaria de novo dinheiro que já saiu da conta
+ * corrente. "Inclusao de Pagamento" é o texto que o C6 usa — descoberto na
+ * fatura real, e não casaria com um filtro genérico de "pagamento efetuado".
+ *
+ * Estorno NÃO está aqui: ele entra, com valor negativo (ver CREDITO).
  */
 const NAO_E_COMPRA = [
-  /pagamento\s+(efetuado|recebido|fatura|em|de)/i,
-  /pgto\.?\s+(efetuado|fatura)/i,
-  /estorno/i,
-  /cr[eé]dito\s+de\s+atraso/i,
+  /pagamento/i,
+  /\bpgto\b/i,
   /saldo\s+(anterior|em)/i,
   /total\s+(da\s+)?fatura/i,
-  /limite\s+(de\s+)?cr[eé]dito/i,
+  /limite/i,
   /^subtotal/i,
-  /^total/i,
-  /vencimento/i,
-  /^d[ée]bito\s+autom/i,
+  /anuidade/i,
+  /encargo/i,
+  /juros/i,
+  /\biof\b/i,
+  /multa/i,
+  /^compras\s+(nacionais|internacionais)/i,
 ];
 
 /**
- * Detecta "3/10", "PARCELA 3/10", "PARC 03/10".
- * O `(?!\d)` no fim evita casar a primeira metade de uma data (05/08/2026).
+ * Como cada emissor marca uma DEVOLUÇÃO.
+ *
+ * Itaú põe o sinal antes do valor ("MERCADOLIVRE*MERCADOLI - 0,01"); o C6
+ * escreve a palavra e deixa o valor positivo ("LOJA - Estorno 360,00"). Os dois
+ * significam a mesma coisa e viram valor negativo.
+ *
+ * Por que isso importa: o Itaú declara "Total dos lançamentos atuais" já
+ * LÍQUIDO dos estornos. Somando só as compras, o app fechava R$ 150,18 acima
+ * do que a fatura realmente cobra.
  */
-const PARCELA = /(?:parc(?:ela)?\.?\s*)?\b(\d{1,2})\s*\/\s*(\d{1,2})\b(?!\s*\/?\d)/i;
+const CREDITO = /estorno|devolu[çc][ãa]o/i;
 
-/** Valor no fim da linha: 1.234,56 / 39,90 / -39,90 */
-const VALOR_FINAL = /(-?\s?R?\$?\s?[\d.]{1,12},\d{2})\s*$/;
+/**
+ * Uma transação dentro da linha. Varredura global: captura data (nos dois
+ * formatos), descrição, sinal opcional de crédito e valor.
+ */
+const TRANSACAO = new RegExp(
+  // data: "24/07" ou "09 set"
+  "(\\d{1,2})\\s*(?:/\\s*(\\d{1,2})|\\s+(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez))" +
+    // descrição: mínimo possível até chegar no valor
+    "\\s+(.+?)" +
+    // sinal de crédito opcional (" - 0,01" no Itaú) e valor
+    "\\s+(-\\s*)?(\\d{1,3}(?:\\.\\d{3})*,\\d{2})(?=\\s|$)",
+  "gi",
+);
 
-/** Data no começo da linha: 05/08 ou 05/08/2026 */
-const DATA_INICIO = /^(\d{2})\s*\/\s*(\d{2})(?:\s*\/\s*(\d{2,4}))?\b/;
+/** Parcela no fim da descrição, colada ou não: "02/02", "- Parcela 11/12". */
+const PARCELA_FINAL = /(?:-\s*)?(?:parcela\s*)?(\d{1,2})\s*\/\s*(\d{1,2})\s*$/i;
 
 /**
  * Interpreta o texto inteiro da fatura.
  *
- * `periodo` é o mês de referência da fatura ("YYYY-MM"), usado para inferir o
- * ano das linhas — porque a fatura traz só "DD/MM". Uma compra de 28/12 numa
- * fatura de janeiro é do ano ANTERIOR; sem essa correção ela iria para o
- * futuro e sumiria do relatório do mês certo.
+ * `periodo` é o mês de vencimento ("YYYY-MM"). Serve para inferir o ano das
+ * compras, porque a fatura traz só dia e mês.
  */
 export function parseInvoiceText(texto: string, periodo: string): InvoiceParseResult {
   const [anoRef, mesRef] = periodo.split("-").map(Number);
@@ -86,100 +127,141 @@ export function parseInvoiceText(texto: string, periodo: string): InvoiceParseRe
     const linha = bruta.replace(/\s+/g, " ").trim();
     if (linha.length < 8) continue;
 
-    const mData = linha.match(DATA_INICIO);
-    if (!mData) continue;
+    TRANSACAO.lastIndex = 0;
+    let achou = false;
+    let m: RegExpExecArray | null;
 
-    const mValor = linha.match(VALOR_FINAL);
-    if (!mValor) {
-      // Tem data mas não tem valor: provavelmente cabeçalho ou linha quebrada.
-      ignoradas.push(linha);
-      continue;
-    }
+    while ((m = TRANSACAO.exec(linha)) !== null) {
+      const trecho = m[0].trim();
+      const dia = Number(m[1]);
+      const mes = m[2] ? Number(m[2]) : MESES[m[3].toLowerCase()];
+      const ehCredito = !!m[5] || CREDITO.test(m[4]);
+      const cents = parseBRLToCents(m[6]);
 
-    if (NAO_E_COMPRA.some((re) => re.test(linha))) continue;
+      if (!mes || dia < 1 || dia > 31 || cents === null || cents <= 0) continue;
+      achou = true;
 
-    const dia = Number(mData[1]);
-    const mes = Number(mData[2]);
-    if (dia < 1 || dia > 31 || mes < 1 || mes > 12) {
-      ignoradas.push(linha);
-      continue;
-    }
+      if (NAO_E_COMPRA.some((re) => re.test(trecho))) continue;
 
-    const textoValor = mValor[1].replace(/[R$\s]/g, "");
-    const negativo = textoValor.startsWith("-");
-    const cents = parseBRLToCents(textoValor.replace(/^-/, ""));
+      let descricao = m[4].trim();
 
-    // Valor negativo em fatura é crédito (estorno, desconto), não compra.
-    if (cents === null || cents <= 0 || negativo) {
-      if (cents === null) ignoradas.push(linha);
-      continue;
-    }
+      let installmentNo: number | null = null;
+      let installmentTotal: number | null = null;
 
-    // Descrição é o miolo: tira a data do começo e o valor do fim.
-    let descricao = linha
-      .slice(mData[0].length, linha.length - mValor[0].length)
-      .trim();
-
-    let installmentNo: number | null = null;
-    let installmentTotal: number | null = null;
-
-    const mParc = descricao.match(PARCELA);
-    if (mParc) {
-      const atual = Number(mParc[1]);
-      const total = Number(mParc[2]);
-      // 1/1 não é parcelamento, e total absurdo é falso positivo.
-      if (total >= 2 && total <= 72 && atual >= 1 && atual <= total) {
-        installmentNo = atual;
-        installmentTotal = total;
-        descricao = descricao.replace(mParc[0], " ").replace(/\s+/g, " ").trim();
+      const mParc = descricao.match(PARCELA_FINAL);
+      if (mParc) {
+        const atual = Number(mParc[1]);
+        const total = Number(mParc[2]);
+        // 1/1 não é parcelamento; total absurdo é falso positivo.
+        if (total >= 2 && total <= 72 && atual >= 1 && atual <= total) {
+          installmentNo = atual;
+          installmentTotal = total;
+          descricao = descricao.slice(0, mParc.index).trim();
+        }
       }
+
+      descricao = descricao.replace(/[-–—•|]+\s*$/, "").trim();
+      if (descricao.length < 2) continue;
+
+      lines.push({
+        date: inferirData(dia, mes, anoRef, mesRef),
+        description: descricao,
+        amountCents: ehCredito ? -cents : cents,
+        installmentNo: ehCredito ? null : installmentNo,
+        installmentTotal: ehCredito ? null : installmentTotal,
+        raw: trecho,
+      });
     }
 
-    descricao = descricao.replace(/[-–—•|]+$/, "").trim();
-    if (!descricao) {
+    // Linha que começa com data mas não rendeu transação: pode ser compra que
+    // o parser não entendeu. Vai para a lista de conferência em vez de sumir.
+    if (!achou && /^\d{1,2}\s*(\/|\s+[a-z]{3}\b)/i.test(linha) && /\d,\d{2}/.test(linha)) {
       ignoradas.push(linha);
-      continue;
     }
-
-    /*
-     * Ano da linha. A fatura traz só dia/mês; o ano vem do período dela.
-     * Compra em dezembro numa fatura de janeiro/fevereiro é do ano anterior —
-     * a diferença de mês grande é o sinal de virada de ano.
-     */
-    let ano = mData[3] ? normalizaAno(mData[3]) : anoRef;
-    if (!mData[3] && mes - mesRef > 6) ano = anoRef - 1;
-    if (!mData[3] && mesRef - mes > 6) ano = anoRef + 1;
-
-    lines.push({
-      rawDate: `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}`,
-      date: `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`,
-      description: descricao,
-      amountCents: cents,
-      installmentNo,
-      installmentTotal,
-      raw: linha,
-    });
   }
 
+  const semPrevisao = removerPrevisaoDeParcelas(lines);
+
   return {
-    lines,
+    lines: semPrevisao,
     ignoradas,
-    totalCents: lines.reduce((acc, l) => acc + l.amountCents, 0),
+    totalCents: semPrevisao.reduce((acc, l) => acc + l.amountCents, 0),
   };
 }
 
-/** "26" -> 2026; "2026" -> 2026. */
-function normalizaAno(texto: string): number {
-  const n = Number(texto);
-  return texto.length === 2 ? 2000 + n : n;
+/**
+ * Remove a seção de PREVISÃO das próximas faturas.
+ *
+ * O Itaú imprime, ao lado dos lançamentos do mês, uma coluna "Compras
+ * parceladas - próximas faturas" com as parcelas que ainda vão vir. Lidas como
+ * compra, elas inflavam a fatura em quase mil reais e duplicariam as parcelas
+ * que o app já gera sozinho a partir do "1/3" da parcela atual.
+ *
+ * Cortar por posição não funciona: as duas colunas se intercalam na leitura, e
+ * o terceiro cartão da fatura aparece DEPOIS do cabeçalho da previsão. A
+ * distinção que vale em qualquer layout é outra — a previsão é sempre a
+ * PARCELA SEGUINTE de uma compra já listada:
+ *
+ *     28/07 SHOPEE *continenta 01/03  <- cobrada agora
+ *     28/07 SHOPEE *continenta 02/03  <- previsão do mês que vem
+ *
+ * Então, de cada compra parcelada, fica só a menor parcela.
+ *
+ * Limite conhecido: uma compra parcelada feita DEPOIS do fechamento aparece só
+ * na previsão, sem par no mês, e seria importada como se fosse cobrada agora.
+ * Ela é uma compra de verdade, só que da fatura seguinte — por isso a tela de
+ * conferência mostra a data de cada linha antes de salvar.
+ */
+function removerPrevisaoDeParcelas(lines: InvoiceLine[]): InvoiceLine[] {
+  const menorParcela = new Map<string, number>();
+
+  const chave = (l: InvoiceLine) =>
+    `${l.description.toLowerCase()}|${l.amountCents}|${l.installmentTotal}`;
+
+  for (const l of lines) {
+    if (!l.installmentNo || !l.installmentTotal) continue;
+    const k = chave(l);
+    const atual = menorParcela.get(k);
+    if (atual === undefined || l.installmentNo < atual) {
+      menorParcela.set(k, l.installmentNo);
+    }
+  }
+
+  const jaVisto = new Set<string>();
+
+  return lines.filter((l) => {
+    if (!l.installmentNo || !l.installmentTotal) return true;
+    const k = chave(l);
+    if (l.installmentNo !== menorParcela.get(k)) return false;
+    // Duas parcelas idênticas na mesma fatura: a segunda é repetição de layout.
+    if (jaVisto.has(k)) return false;
+    jaVisto.add(k);
+    return true;
+  });
 }
 
 /**
- * Quantas parcelas AINDA FALTAM, e a partir de quando.
+ * Ano da compra.
  *
- * A fatura mostra "3/10": três já foram cobradas, sete ainda vêm. Importar as
- * dez lançaria de novo as três que já passaram — e as passadas já estão nas
- * faturas anteriores. Só as futuras são criadas.
+ * A fatura traz só dia e mês. A regra que resolve todos os casos: a compra
+ * nunca é POSTERIOR ao fechamento da fatura. Se o mês da compra é maior que o
+ * mês da fatura, ela é do ano anterior.
+ *
+ * É o que faz "09 set" numa fatura de agosto/2026 virar 2025-09-09 (parcela 11
+ * de 12, comprada um ano antes) em vez de setembro/2026 — que ainda nem
+ * aconteceu.
+ */
+function inferirData(dia: number, mes: number, anoRef: number, mesRef: number): string {
+  const ano = mes > mesRef ? anoRef - 1 : anoRef;
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+/**
+ * Quantas parcelas AINDA FALTAM.
+ *
+ * "3/10" significa que três já foram cobradas e sete ainda vêm. Importar as dez
+ * lançaria de novo as três que já passaram — e essas já estão nas faturas
+ * anteriores, então o mesmo dinheiro contaria duas vezes.
  */
 export function parcelasRestantes(linha: InvoiceLine): number {
   if (!linha.installmentNo || !linha.installmentTotal) return 0;
