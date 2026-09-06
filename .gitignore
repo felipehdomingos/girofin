@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -42,6 +43,7 @@ next-env.d.ts
 
 # build dos testes
 /.test-build
+/.test-build/
 
 # O BANCO DE DADOS. É o seu extrato financeiro — nunca deve ir para
 # repositório nenhum, público ou privado. Backup se faz copiando a pasta

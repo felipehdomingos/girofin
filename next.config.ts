@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Azure App Service can start the minimal server without shipping the
+  // complete development dependency tree.
+  output: "standalone",
 };
 
 export default nextConfig;
