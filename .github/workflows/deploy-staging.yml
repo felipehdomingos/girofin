@@ -41,3 +41,5 @@ jobs:
             -APP_ENV staging
             -PORT 8080
             -HOSTNAME 0.0.0.0
+            -ALLOW_UNSCOPED_FINANCEIRO_DB true
+            -FINANCEIRO_DB /home/data/financeiro.db
