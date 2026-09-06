@@ -8,6 +8,7 @@ const standaloneStaticDir = path.join(standalone, ".next", "static");
 const publicDir = path.join(root, "public");
 const standalonePublicDir = path.join(standalone, "public");
 const standaloneDataDir = path.join(standalone, "data");
+const standalonePackageJson = path.join(standalone, "package.json");
 
 if (!fs.existsSync(standalone)) {
   throw new Error("Standalone build nao encontrado em .next/standalone.");
@@ -21,3 +22,14 @@ if (fs.existsSync(publicDir)) {
 // Output tracing can include the local SQLite file because the development
 // mode resolves it at runtime. Never ship a user's financial database.
 fs.rmSync(standaloneDataDir, { recursive: true, force: true });
+
+const packageJson = JSON.parse(fs.readFileSync(standalonePackageJson, "utf8"));
+packageJson.scripts = {
+  ...packageJson.scripts,
+  start: "node server.js",
+};
+fs.writeFileSync(
+  standalonePackageJson,
+  `${JSON.stringify(packageJson, null, 2)}\n`,
+  "utf8",
+);
