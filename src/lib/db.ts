@@ -44,6 +44,7 @@ const userInstances = new Map<string, DatabaseSync>();
 function assertFinanceStorageMode(): void {
   if (
     (process.env.NODE_ENV === "production" || authConfigured()) &&
+    process.env.APP_ENV !== "staging" &&
     process.env.ALLOW_UNSCOPED_FINANCEIRO_DB !== "true"
   ) {
     throw new Error(
