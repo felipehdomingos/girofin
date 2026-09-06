@@ -52,10 +52,10 @@ export function addMonthsToDate(date: string, delta: number): string {
 /**
  * Em qual fatura cai uma compra no cartão, e quando essa fatura vence.
  *
- * Regra do ciclo: a fatura fecha no dia `closingDay` e vence no dia `dueDay`.
- * Compra feita ATÉ o fechamento entra na fatura que está fechando; compra
- * feita DEPOIS já pegou o ciclo seguinte. É por isso que comprar dia 28 com
- * fechamento dia 25 significa pagar só no mês seguinte ao seguinte.
+ * Regra do ciclo: `closingDay` é a virada para o ciclo seguinte. A compra
+ * feita ANTES desse dia ainda pertence à fatura do mês; a compra feita NO dia
+ * do fechamento já pertence à próxima fatura. Assim, com fechamento dia 3,
+ * o ciclo de outubro vai de 03/set a 02/out.
  *
  * Quando `dueDay` é menor ou igual a `closingDay`, o vencimento é no mês
  * posterior ao fechamento (ciclo que atravessa a virada do mês) — caso comum
@@ -70,8 +70,8 @@ export function firstInvoiceDueDate(
 ): string {
   const [y, m, d] = purchaseDate.split("-").map(Number);
 
-  // 0 = fecha no ciclo deste mês; 1 = já passou do fechamento, cai no próximo.
-  const cycleShift = d > closingDay ? 1 : 0;
+  // O próprio dia do fechamento já abre o ciclo seguinte.
+  const cycleShift = d >= closingDay ? 1 : 0;
   // Vencimento antes do fechamento significa pagar no mês seguinte ao corte.
   const dueShift = dueDay <= closingDay ? 1 : 0;
 

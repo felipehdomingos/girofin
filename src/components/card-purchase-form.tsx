@@ -19,7 +19,7 @@ import { KIND_LABEL, type Account, type Category } from "@/lib/types";
  *
  * O que ESTE formulário precisa mostrar, e o geral não mostra, é a virada: em
  * qual fatura a compra cai. Com fechamento dia 3, comprar dia 2 é a fatura
- * deste mês e comprar dia 4 é a do mês que vem — a diferença é de trinta dias
+ * deste mês e comprar dia 3 já é a do mês que vem — a diferença é de trinta dias
  * no bolso, e não dá para adivinhar olhando o formulário.
  */
 export function CardPurchaseForm({
@@ -67,7 +67,7 @@ export function CardPurchaseForm({
       : null;
 
   const dia = Number(data.slice(8, 10));
-  const passouDaVirada = temCiclo && dia > card.closingDay!;
+  const passouDaVirada = temCiclo && dia >= card.closingDay!;
 
   return (
     <section className="glass p-2xl">
@@ -215,12 +215,12 @@ export function CardPurchaseForm({
                 <span>
                   {passouDaVirada ? (
                     <>
-                      Comprou <strong>depois</strong> do fechamento (dia {card.closingDay}
-                      ), então já pegou o ciclo seguinte:{" "}
+                      Comprou <strong>no dia ou depois</strong> da virada (dia{" "}
+                      {card.closingDay}), então já pegou o ciclo seguinte:{" "}
                     </>
                   ) : (
                     <>
-                      Comprou <strong>antes</strong> do fechamento (dia {card.closingDay}
+                      Comprou <strong>antes</strong> da virada (dia {card.closingDay}
                       ), então entra na fatura que está fechando:{" "}
                     </>
                   )}
