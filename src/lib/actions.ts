@@ -412,6 +412,38 @@ export async function payCardInvoiceAction(
   }
 }
 
+/**
+ * Quita um lançamento que estava agendado (data futura).
+ * Atualiza a linha existente — criar outra contaria o gasto duas vezes.
+ */
+export async function payScheduledAction(
+  transactionId: string,
+  accountId: string,
+  amountCents: number,
+  date: string,
+): Promise<ActionResult> {
+  if (!accountId) {
+    return { ok: false, error: "Escolha de qual conta esse pagamento sai." };
+  }
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    return { ok: false, error: "Valor inválido." };
+  }
+
+  try {
+    repo.payScheduledTransaction({
+      transactionId,
+      accountId,
+      amountCents,
+      date,
+      method: null,
+    });
+    revalidateFinance();
+    return { ok: true, message: "Pagamento registrado." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 // ---------------------------------------------------------------- carteiras
 
 export async function createAccountAction(formData: FormData): Promise<ActionResult> {

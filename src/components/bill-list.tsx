@@ -9,6 +9,7 @@ import {
   deleteBillAction,
   payBillAction,
   payCardInvoiceAction,
+  payScheduledAction,
   unpayBillAction,
 } from "@/lib/actions";
 import { formatDay } from "@/lib/dates";
@@ -93,6 +94,8 @@ export function BillList({
       <ul className="flex flex-col">
         {bills.map((b) => {
           const ehFatura = b.bill.id.startsWith("card:");
+          // Lançamento com data futura, listado aqui como compromisso.
+          const ehAgendado = b.bill.id.startsWith("tx:");
           const abertoParaPagar = payingId === b.bill.id;
           const contaEscolhida = origem[b.bill.id] ?? contasPagadoras[0]?.id ?? "";
           const valorTexto =
@@ -117,6 +120,7 @@ export function BillList({
                     <CategoryDot color={b.category.color} />
                     <span className="truncate text-sm">{b.bill.name}</span>
                     {ehFatura ? <Badge tone="info">fatura</Badge> : null}
+                    {ehAgendado ? <Badge tone="info">agendado</Badge> : null}
                     {b.bill.recurrence === "ONCE" ? <Badge>boleto</Badge> : null}
                     {b.status === "OVERDUE" ? (
                       <AlertTriangle
@@ -196,7 +200,7 @@ export function BillList({
 
                   {/* Fatura é sintetizada a partir das compras — não existe
                       registro para excluir. */}
-                  {ehFatura ? null : (
+                  {ehFatura || ehAgendado ? null : (
                     <ActionButton
                       action={() => deleteBillAction(b.bill.id)}
                       confirm
@@ -262,12 +266,26 @@ export function BillList({
 
                       <ActionButton
                         action={async () => {
+                          const cents = Math.round(
+                            Number(valorTexto.replace(/\./g, "").replace(",", ".")) *
+                              100,
+                          );
+
+                          // Lançamento agendado: ATUALIZA a linha existente.
+                          // Criar outra contaria o mesmo gasto duas vezes.
+                          if (ehAgendado) {
+                            const r = await payScheduledAction(
+                              b.bill.id.replace("tx:", ""),
+                              contaEscolhida,
+                              cents,
+                              today,
+                            );
+                            if (r.ok) setPayingId(null);
+                            return r;
+                          }
+
                           if (ehFatura) {
                             // Fatura: transferência, não despesa.
-                            const cents = Math.round(
-                              Number(valorTexto.replace(/\./g, "").replace(",", ".")) *
-                                100,
-                            );
                             const r = await payCardInvoiceAction(
                               b.bill.id.replace("card:", ""),
                               contaEscolhida,
@@ -299,6 +317,11 @@ export function BillList({
                       Pagar a fatura <strong>não</strong> gera um gasto novo: as compras
                       já foram contadas no mês do vencimento. O dinheiro só sai da conta
                       escolhida e zera o cartão.
+                    </p>
+                  ) : ehAgendado ? (
+                    <p className="mt-md text-[11px] leading-relaxed text-muted-foreground">
+                      Este lançamento já existe agendado. Confirmar <strong>atualiza</strong>{" "}
+                      a linha com a conta e o valor reais — não cria um gasto novo.
                     </p>
                   ) : null}
                 </div>

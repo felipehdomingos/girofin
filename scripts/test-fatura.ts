@@ -24,6 +24,7 @@ import {
   listAccountsWithBalance,
   listCategories,
   payCardInvoice,
+  payScheduledTransaction,
 } from "../src/lib/repo";
 
 let ok = 0;
@@ -228,6 +229,51 @@ const passadoSemConta = transactionSchema.safeParse({
   method: null,
 });
 check("data passada sem conta é rejeitada", passadoSemConta.success, false);
+
+console.log("\n== 7. lançamento agendado aparece em Contas a pagar ==");
+/*
+ * O caso real: "mensalidade da faculdade, vence 09/09" lançada sem conta.
+ * Antes ficava só no extrato, invisível na tela feita para responder
+ * "o que eu tenho que pagar".
+ */
+const daquiUmMes = addMonthsToDate(hoje, 1);
+const mesFuturo = daquiUmMes.slice(0, 7);
+
+const agendadoId = createTransaction({
+  type: "EXPENSE",
+  amountCents: 17547,
+  date: daquiUmMes,
+  description: `Mensalidade ${marca}`,
+  categoryId: categoria.id,
+  nature: "VISTA",
+  accountId: null,
+  incomeSourceId: null,
+  method: null,
+  notes: null,
+});
+
+const aPagarFuturo = getBillsForMonth(mesFuturo);
+const agendado = aPagarFuturo.find((b) => b.bill.id === `tx:${agendadoId}`);
+check("agendado listado em Contas a pagar", agendado !== undefined, true);
+check("com o valor certo", agendado?.bill.amountCents, 17547);
+check("com o vencimento certo", agendado?.dueDate, daquiUmMes);
+
+// Quitar tem que ATUALIZAR a linha, não criar outra.
+const gastoAntes = getMonthSummary(mesFuturo).expenseCents;
+payScheduledTransaction({
+  transactionId: agendadoId,
+  accountId: contaId,
+  amountCents: 17547,
+  date: daquiUmMes,
+  method: "PIX",
+});
+const gastoDepois = getMonthSummary(mesFuturo).expenseCents;
+check("quitar não duplica o gasto", gastoDepois, gastoAntes);
+check(
+  "sai da lista de a pagar depois de quitado",
+  getBillsForMonth(mesFuturo).some((b) => b.bill.id === `tx:${agendadoId}`),
+  false,
+);
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

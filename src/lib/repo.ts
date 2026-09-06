@@ -1198,6 +1198,87 @@ export function getBillsForMonth(month: string): BillInMonth[] {
     });
   }
 
+  /*
+   * Lançamento com data FUTURA também é conta a pagar.
+   *
+   * Quem registra "mensalidade da faculdade, vence 09/09" está registrando um
+   * compromisso — e esperava vê-lo em A pagar. Antes ele ficava só no extrato
+   * de lançamentos, invisível justamente na tela feita para responder "o que
+   * eu tenho que pagar".
+   *
+   * O que define "ainda a pagar" é NÃO TER CONTA atribuída, não só a data.
+   * Atribuir a conta é o que a quitação faz — então, uma vez quitado, o
+   * lançamento sai da lista sozinho, sem precisar de um campo "pago" separado
+   * que poderia divergir do resto.
+   *
+   * Ficam de fora, para não contar duas vezes:
+   *  - compra no cartão: já entra na fatura daquele cartão
+   *  - quitação de conta (billId): a conta já está na lista por si
+   */
+  const agendados = getDb()
+    .prepare(
+      `SELECT t.id, t.description, t.amountCents, t.date, t.categoryId,
+              c.name AS c_name, c.kind AS c_kind, c.color AS c_color,
+              c.icon AS c_icon, c.budgetCents AS c_budget, c.archived AS c_archived
+         FROM transactions t
+         JOIN categories c ON c.id = t.categoryId
+        WHERE t.type = 'EXPENSE'
+          AND t.date BETWEEN ? AND ?
+          AND t.date > ?
+          AND t.billId IS NULL
+          AND t.transferToAccountId IS NULL
+          AND t.accountId IS NULL
+        ORDER BY t.date`,
+    )
+    .all(start, end, todayIso) as unknown as Array<{
+    id: string;
+    description: string;
+    amountCents: number;
+    date: string;
+    categoryId: string;
+    c_name: string;
+    c_kind: CategoryKind;
+    c_color: string;
+    c_icon: string;
+    c_budget: number | null;
+    c_archived: number;
+  }>;
+
+  for (const t of agendados) {
+    result.push({
+      bill: {
+        // Prefixo "tx:" identifica que a origem é um lançamento agendado, e
+        // não uma linha de fixed_bills. Quitar isso ATUALIZA o lançamento em
+        // vez de criar outro — senão o gasto entraria duas vezes.
+        id: `tx:${t.id}`,
+        name: t.description,
+        recurrence: "ONCE",
+        amountCents: t.amountCents,
+        dueDay: null,
+        dueDate: t.date,
+        categoryId: t.categoryId,
+        variable: false,
+        active: true,
+        barcode: null,
+        notes: null,
+      },
+      category: {
+        id: t.categoryId,
+        name: t.c_name,
+        kind: t.c_kind,
+        color: t.c_color,
+        icon: t.c_icon,
+        budgetCents: t.c_budget,
+        archived: t.c_archived === 1,
+      },
+      dueDate: t.date,
+      status: "UPCOMING",
+      paidCents: null,
+      paidTransactionId: null,
+      daysUntilDue: daysBetween(todayIso, t.date),
+    });
+  }
+
   // Em aberto primeiro, e dentro disso a mais urgente no topo: a tela responde
   // "o que eu preciso pagar agora" sem o usuário ter que procurar.
   return result.sort((a, b) => {
@@ -1254,6 +1335,41 @@ export function payBill(input: {
     input.accountId ?? null,
   );
   return id;
+}
+
+/**
+ * Quita um lançamento que estava agendado para o futuro.
+ *
+ * ATUALIZA a linha existente em vez de criar outra: o gasto já foi registrado
+ * quando você agendou; criar um segundo lançamento na hora de pagar contaria o
+ * mesmo dinheiro duas vezes.
+ *
+ * O que muda é o que só se sabe na hora de pagar: de qual conta saiu, quanto
+ * saiu de fato e em que dia.
+ */
+export function payScheduledTransaction(input: {
+  transactionId: string;
+  accountId: string;
+  amountCents: number;
+  date: string;
+  method: PaymentMethod | null;
+}): void {
+  const conta = getAccount(input.accountId);
+  if (!conta) throw new Error("Conta não encontrada");
+
+  getDb()
+    .prepare(
+      `UPDATE transactions
+          SET accountId = ?, amountCents = ?, date = ?, method = COALESCE(?, method)
+        WHERE id = ?`,
+    )
+    .run(
+      input.accountId,
+      input.amountCents,
+      input.date,
+      input.method,
+      input.transactionId,
+    );
 }
 
 /** Desfaz o pagamento de uma conta no mês (apaga o lançamento vinculado). */
