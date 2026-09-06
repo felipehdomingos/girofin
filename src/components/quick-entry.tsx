@@ -103,9 +103,10 @@ export function QuickEntry({
     if (!rows || rows.length === 0) return;
     setError(null);
 
-    // Barra antes de mandar ao servidor: toda linha precisa de conta, senão o
-    // saldo das contas para de bater com o total do mês.
-    const semConta = rows.filter((r) => !r.chosenAccountId);
+    // Barra antes de mandar ao servidor: linha com data de HOJE ou passada
+    // precisa de conta, senão o saldo para de bater com o extrato.
+    // Data futura é compromisso agendado — a origem se define ao pagar.
+    const semConta = rows.filter((r) => !r.chosenAccountId && r.date <= today);
     if (semConta.length > 0) {
       setError(
         semConta.length === 1
@@ -447,7 +448,8 @@ export function QuickEntry({
                         aria-invalid={
                           row.type === "EXPENSE" &&
                           !!row.chosenMethod &&
-                          !row.chosenAccountId
+                          !row.chosenAccountId &&
+                          row.date <= today
                         }
                         onChange={(e) => {
                           const value = e.target.value;
@@ -462,15 +464,18 @@ export function QuickEntry({
                         className={`cursor-pointer rounded-control border bg-muted px-md py-sm text-xs text-foreground ${
                           row.type === "EXPENSE" &&
                           row.chosenMethod &&
-                          !row.chosenAccountId
+                          !row.chosenAccountId &&
+                          row.date <= today
                             ? "border-amber-500/60"
                             : "border-border"
                         }`}
                       >
                         <option value="">
-                          {row.chosenMethod
-                            ? METHOD_ACCOUNT_LABEL[row.chosenMethod] + "…"
-                            : "Sem conta"}
+                          {row.date > today
+                            ? "Definir ao pagar"
+                            : row.chosenMethod
+                              ? METHOD_ACCOUNT_LABEL[row.chosenMethod] + "…"
+                              : "Sem conta"}
                         </option>
                         {(row.chosenMethod
                           ? accounts.filter((a) =>

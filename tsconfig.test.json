@@ -24,7 +24,6 @@
   ],
   "exclude": [
     "src/lib/actions.ts",
-    "src/lib/validation.ts",
     "src/lib/bcb.ts",
     "src/lib/banks.ts"
   ]

@@ -7,7 +7,13 @@
  *  3. Pagar a fatura NÃO conta como despesa nova (senão dobra o mês)
  *  4. Pagar a fatura tira o dinheiro da conta e zera o cartão
  */
-import { currentMonth, firstInvoiceDueDate, today } from "../src/lib/dates";
+import {
+  addMonthsToDate,
+  currentMonth,
+  firstInvoiceDueDate,
+  today,
+} from "../src/lib/dates";
+import { transactionSchema } from "../src/lib/validation";
 import { formatBRL } from "../src/lib/money";
 import {
   createAccount,
@@ -175,6 +181,53 @@ check(
   ),
   true,
 );
+
+console.log("\n== 6. compromisso futuro não exige conta de origem ==");
+/*
+ * Boleto que vence semana que vem ainda não saiu de conta nenhuma. Exigir a
+ * origem no cadastro obrigaria a inventar uma resposta, e um palpite errado é
+ * pior que campo vazio: some do saldo de uma conta que nunca pagou aquilo.
+ */
+const amanha = addMonthsToDate(hoje, 1);
+
+const futuroSemConta = transactionSchema.safeParse({
+  type: "EXPENSE",
+  amount: "175,31",
+  date: amanha,
+  description: "Boleto faculdade",
+  categoryId: categoria.id,
+  nature: "VISTA",
+  amountMode: "TOTAL",
+  accountId: null,
+  method: null,
+});
+check("data futura sem conta é aceita", futuroSemConta.success, true);
+
+const hojeSemConta = transactionSchema.safeParse({
+  type: "EXPENSE",
+  amount: "175,31",
+  date: hoje,
+  description: "Compra de hoje",
+  categoryId: categoria.id,
+  nature: "VISTA",
+  amountMode: "TOTAL",
+  accountId: null,
+  method: null,
+});
+check("data de hoje sem conta é rejeitada", hojeSemConta.success, false);
+
+const passadoSemConta = transactionSchema.safeParse({
+  type: "EXPENSE",
+  amount: "50,00",
+  date: "2020-01-15",
+  description: "Gasto antigo",
+  categoryId: categoria.id,
+  nature: "VISTA",
+  amountMode: "TOTAL",
+  accountId: null,
+  method: null,
+});
+check("data passada sem conta é rejeitada", passadoSemConta.success, false);
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

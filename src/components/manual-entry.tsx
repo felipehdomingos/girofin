@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
@@ -48,6 +49,10 @@ export function ManualEntry({
   const [accountId, setAccountId] = useState("");
   const [alsoBill, setAlsoBill] = useState(false);
   const [method, setMethod] = useState<PaymentMethod | "">("");
+  const [data, setData] = useState(today);
+
+  // Compromisso agendado x gasto realizado: a data decide.
+  const futuro = data > today;
 
   const grouped = (["NEED", "WANT", "SAVE"] as const).map((kind) => ({
     kind,
@@ -242,7 +247,14 @@ export function ManualEntry({
                   : undefined
               }
             >
-              <Input id="date" name="date" type="date" required defaultValue={today} />
+              <Input
+                id="date"
+                name="date"
+                type="date"
+                required
+                value={data}
+                onChange={(e) => setData(e.target.value)}
+              />
             </Field>
 
             <Field
@@ -315,11 +327,36 @@ export function ManualEntry({
               </div>
             ) : null}
 
+            {/* Data futura: é compromisso, não gasto realizado. O dinheiro não
+                saiu de conta nenhuma ainda, então não faz sentido exigir a
+                origem — e o lugar natural disso é Contas a pagar. */}
+            {futuro ? (
+              <p className="rounded-control border border-secondary/40 bg-secondary/10 p-lg text-xs leading-relaxed">
+                <span className="font-semibold">Data futura.</span> Isso é um
+                compromisso, não um gasto que já aconteceu — então a conta de
+                origem fica opcional: você diz de onde saiu na hora de pagar.
+                <br />
+                Se é um boleto ou conta que vence, cadastrar em{" "}
+                <Link
+                  href="/contas"
+                  className="cursor-pointer underline underline-offset-4"
+                >
+                  Contas a pagar
+                </Link>{" "}
+                é melhor: você recebe o aviso de vencimento e marca como paga
+                quando pagar.
+              </p>
+            ) : null}
+
             {type === "EXPENSE" ? (
               <Field
                 label="Forma de pagamento"
                 name="method"
-                hint="Define de onde o dinheiro sai — é o que faz o saldo de cada conta fechar."
+                hint={
+                  futuro
+                    ? "Opcional enquanto a data não chegou."
+                    : "Define de onde o dinheiro sai — é o que faz o saldo de cada conta fechar."
+                }
               >
                 <Select
                   id="method"
@@ -353,7 +390,7 @@ export function ManualEntry({
               <Field
                 label={METHOD_ACCOUNT_LABEL[method]}
                 name="accountId"
-                required
+                required={!futuro}
                 hint={
                   isCard && selectedAccount
                     ? `Fecha dia ${selectedAccount.closingDay}, vence dia ${selectedAccount.dueDay} — a parcela cai na fatura correspondente.`
@@ -377,9 +414,9 @@ export function ManualEntry({
                     name="accountId"
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
-                    required
+                    required={!futuro}
                   >
-                    <option value="">Escolha…</option>
+                    <option value="">{futuro ? "Definir depois" : "Escolha…"}</option>
                     {contasCompativeis.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name}

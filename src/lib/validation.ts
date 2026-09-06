@@ -31,6 +31,21 @@ const moneyField = (label: string) =>
       return cents;
     });
 
+/**
+ * Hoje como "YYYY-MM-DD", no fuso local.
+ *
+ * Duplica o `today()` de dates.ts de propósito: validation.ts é importado por
+ * componentes de cliente, e dates.ts não tem dependência de servidor — mas
+ * manter a importação cruzada aqui puxaria a árvore inteira para o bundle.
+ * São três linhas; a comparação é sempre string contra string.
+ */
+function hojeIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.")
@@ -70,19 +85,24 @@ export const transactionSchema = z
     { message: "Parcelado precisa de 2 parcelas ou mais.", path: ["installments"] },
   )
   /*
-   * Todo dinheiro sai de algum lugar e entra em algum lugar.
+   * Conta obrigatória — mas só quando o dinheiro JÁ se moveu.
    *
-   * Conta obrigatória nos dois sentidos é o que faz o caixa fechar: sem isso,
-   * o saldo de cada conta seria um chute, porque parte dos lançamentos não
-   * pertenceria a conta nenhuma. Um gasto "órfão" não aparece em erro — ele
-   * simplesmente faz a soma das contas divergir do total do mês, e aí não há
-   * como saber qual dos dois números está certo.
+   * A regra existe para o caixa fechar: um gasto sem conta não pertence a
+   * lugar nenhum, e a soma das contas passa a divergir do total do mês.
+   *
+   * Só que ela não pode valer para data FUTURA. Um boleto que vence semana que
+   * vem ainda não saiu de conta nenhuma — exigir a origem no cadastro obriga a
+   * inventar uma resposta, e um palpite errado é pior que campo vazio: ele
+   * some do saldo de uma conta que nunca pagou aquilo.
+   *
+   * Data futura = compromisso agendado, origem opcional.
+   * Data de hoje ou passada = o dinheiro saiu, origem obrigatória.
    */
-  .refine((v) => v.type !== "EXPENSE" || !!v.method, {
+  .refine((v) => v.type !== "EXPENSE" || v.date > hojeIso() || !!v.method, {
     message: "Informe a forma de pagamento.",
     path: ["method"],
   })
-  .refine((v) => !!v.accountId, {
+  .refine((v) => v.date > hojeIso() || !!v.accountId, {
     message: "Escolha a conta ou o cartão deste lançamento.",
     path: ["accountId"],
   });
