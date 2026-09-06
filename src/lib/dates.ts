@@ -133,6 +133,57 @@ export function formatDay(date: string): string {
   return DATE_LABEL.format(new Date(y, m - 1, d));
 }
 
+/** Soma dias a uma data "YYYY-MM-DD". */
+export function addDays(date: string, delta: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  // Date.UTC evita que horário de verão desloque o resultado em um dia.
+  const t = Date.UTC(y, m - 1, d) + delta * 86_400_000;
+  const dt = new Date(t);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    dt.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
+/**
+ * Semana de segunda a domingo, que é como se organiza a semana no Brasil.
+ * `getDay()` devolve 0 para domingo, daí o ajuste para tratá-lo como último dia.
+ */
+export function weekBounds(date: string): { start: string; end: string } {
+  const [y, m, d] = date.split("-").map(Number);
+  const diaDaSemana = new Date(y, m - 1, d).getDay();
+  const desdeSegunda = diaDaSemana === 0 ? 6 : diaDaSemana - 1;
+  const start = addDays(date, -desdeSegunda);
+  return { start, end: addDays(start, 6) };
+}
+
+/** Ano inteiro, de 1º de janeiro a 31 de dezembro. */
+export function yearBounds(year: number): { start: string; end: string } {
+  return { start: `${year}-01-01`, end: `${year}-12-31` };
+}
+
+/** Quantos dias há entre duas datas (inclusive nas duas pontas). */
+export function daysInRange(start: string, end: string): number {
+  const [ay, am, ad] = start.split("-").map(Number);
+  const [by, bm, bd] = end.split("-").map(Number);
+  return (
+    Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86_400_000) + 1
+  );
+}
+
+const DIA_MES = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short" });
+
+/** "2026-09-06" -> "06 de set." */
+export function formatDayMonth(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return DIA_MES.format(new Date(y, m - 1, d));
+}
+
+/** "01/09/2026 a 30/09/2026" */
+export function formatRange(start: string, end: string): string {
+  const br = (d: string) => d.split("-").reverse().join("/");
+  return `${br(start)} a ${br(end)}`;
+}
+
 /** Quantos dias tem o mês, e quantos já passaram (para projeção intra-mês). */
 export function monthProgress(month: string): { total: number; elapsed: number } {
   const [y, m] = month.split("-").map(Number);

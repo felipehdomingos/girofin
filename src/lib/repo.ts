@@ -2,8 +2,13 @@ import "server-only";
 
 import { getDb, newId } from "./db";
 import {
+  addDays,
+  addMonths,
   addMonthsToDate,
+  daysInRange,
   firstInvoiceDueDate,
+  formatDayMonth,
+  formatMonth,
   monthBounds,
   monthRange,
   today,
@@ -360,8 +365,21 @@ export function deleteTransaction(id: string): void {
  * participação/orçamento em memória (é dezena de categorias, não milhão de linhas).
  */
 export function getMonthSummary(month: string): MonthSummary {
-  const db = getDb();
   const { start, end } = monthBounds(month);
+  return { ...getRangeSummary(start, end), month };
+}
+
+/**
+ * Resumo de um intervalo QUALQUER de datas.
+ *
+ * Toda a agregação do app era por mês, o que impedia relatório semanal, anual
+ * ou de período customizado. `getMonthSummary` virou um caso particular disto.
+ */
+export function getRangeSummary(
+  start: string,
+  end: string,
+): Omit<MonthSummary, "month"> {
+  const db = getDb();
 
   // `transferToAccountId IS NULL` em toda agregação de mês: transferência entre
   // contas próprias não é receita nem despesa, é o mesmo dinheiro mudando de
@@ -458,7 +476,6 @@ export function getMonthSummary(month: string): MonthSummary {
   const fixedCents = natureRows.find((r) => r.nature === "FIXO")?.total ?? 0;
 
   return {
-    month,
     incomeCents,
     expenseCents,
     balanceCents: incomeCents - expenseCents,
@@ -469,6 +486,119 @@ export function getMonthSummary(month: string): MonthSummary {
     installmentCents,
     fixedCents,
   };
+}
+
+/** Lançamentos de um intervalo qualquer, do mais recente para o mais antigo. */
+export function listTransactionsInRange(
+  start: string,
+  end: string,
+): TransactionWithCategory[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT ${TX_SELECT}
+       ${TX_FROM}
+        WHERE t.date BETWEEN ? AND ?
+        ORDER BY t.date DESC, t.createdAt DESC`,
+    )
+    .all(start, end) as unknown as TxJoinRow[];
+  return rows.map(rowToTransactionWithCategory);
+}
+
+/**
+ * Série temporal do intervalo, agrupada por dia ou por mês.
+ *
+ * A granularidade segue o tamanho do período: um relatório anual em barras
+ * diárias vira 365 colunas ilegíveis, e uma semana em barras mensais vira uma
+ * coluna só. O corte é em ~2 meses.
+ */
+export function getRangeSeries(
+  start: string,
+  end: string,
+): { bucket: "dia" | "mes"; pontos: Array<{ label: string; incomeCents: number; expenseCents: number; balanceCents: number }> } {
+  const db = getDb();
+  const dias = daysInRange(start, end);
+  const bucket: "dia" | "mes" = dias <= 62 ? "dia" : "mes";
+  const corte = bucket === "dia" ? 10 : 7; // substr: 10 = data cheia, 7 = ano-mês
+
+  const rows = db
+    .prepare(
+      `SELECT substr(date, 1, ${corte}) AS chave, type, SUM(amountCents) AS total
+         FROM transactions
+        WHERE date BETWEEN ? AND ? AND transferToAccountId IS NULL
+        GROUP BY chave, type
+        ORDER BY chave`,
+    )
+    .all(start, end) as unknown as Array<{
+    chave: string;
+    type: TxType;
+    total: number;
+  }>;
+
+  // Preenche os buckets vazios: um buraco no meio da linha leria como
+  // "sem dado" quando na verdade significa "nada movimentado".
+  const chaves: string[] = [];
+  if (bucket === "dia") {
+    for (let d = start; d <= end; d = addDays(d, 1)) chaves.push(d);
+  } else {
+    for (let m = start.slice(0, 7); m <= end.slice(0, 7); m = addMonths(m, 1)) {
+      chaves.push(m);
+    }
+  }
+
+  const pontos = chaves.map((chave) => {
+    const inc = rows.find((r) => r.chave === chave && r.type === "INCOME")?.total ?? 0;
+    const exp = rows.find((r) => r.chave === chave && r.type === "EXPENSE")?.total ?? 0;
+    return {
+      label: bucket === "dia" ? formatDayMonth(chave) : formatMonth(chave),
+      incomeCents: inc,
+      expenseCents: exp,
+      balanceCents: inc - exp,
+    };
+  });
+
+  return { bucket, pontos };
+}
+
+/** Totais por forma de pagamento no intervalo — mostra por onde o dinheiro sai. */
+export function getRangeByMethod(
+  start: string,
+  end: string,
+): Array<{ method: PaymentMethod | null; totalCents: number }> {
+  return getDb()
+    .prepare(
+      `SELECT method, SUM(amountCents) AS totalCents
+         FROM transactions
+        WHERE date BETWEEN ? AND ? AND type = 'EXPENSE'
+          AND transferToAccountId IS NULL
+        GROUP BY method
+        ORDER BY totalCents DESC`,
+    )
+    .all(start, end) as unknown as Array<{
+    method: PaymentMethod | null;
+    totalCents: number;
+  }>;
+}
+
+/** Totais por conta/cartão no intervalo. */
+export function getRangeByAccount(
+  start: string,
+  end: string,
+): Array<{ name: string | null; color: string | null; totalCents: number }> {
+  return getDb()
+    .prepare(
+      `SELECT a.name, a.color, SUM(t.amountCents) AS totalCents
+         FROM transactions t
+    LEFT JOIN accounts a ON a.id = t.accountId
+        WHERE t.date BETWEEN ? AND ? AND t.type = 'EXPENSE'
+          AND t.transferToAccountId IS NULL
+        GROUP BY t.accountId
+        ORDER BY totalCents DESC`,
+    )
+    .all(start, end) as unknown as Array<{
+    name: string | null;
+    color: string | null;
+    totalCents: number;
+  }>;
 }
 
 /** Série mensal para o gráfico de evolução. Meses sem lançamento viram zero. */

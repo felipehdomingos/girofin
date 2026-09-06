@@ -21,7 +21,10 @@ import {
   getBillsForMonth,
   getCardInvoice,
   getMonthSummary,
+  getRangeSeries,
+  getRangeSummary,
   listAccountsWithBalance,
+  listTransactionsInRange,
   listCategories,
   payCardInvoice,
   payScheduledTransaction,
@@ -274,6 +277,48 @@ check(
   getBillsForMonth(mesFuturo).some((b) => b.bill.id === `tx:${agendadoId}`),
   false,
 );
+
+console.log("\n== 8. relatório por período arbitrário ==");
+/*
+ * Toda agregação do app era por mês, o que impedia relatório semanal, anual ou
+ * customizado. getMonthSummary virou um caso particular de getRangeSummary.
+ */
+const diaBase = `${mes}-15`;
+createTransaction({
+  type: "EXPENSE",
+  amountCents: 5000,
+  date: diaBase,
+  description: `Gasto do periodo ${marca}`,
+  categoryId: categoria.id,
+  nature: "VISTA",
+  accountId: contaId,
+  incomeSourceId: null,
+  method: "PIX",
+  notes: null,
+});
+
+const soDoDia = getRangeSummary(diaBase, diaBase);
+check("intervalo de um dia só encontra o gasto", soDoDia.expenseCents >= 5000, true);
+
+const foraDoIntervalo = getRangeSummary(`${mes}-01`, `${mes}-02`);
+check(
+  "intervalo que não cobre o gasto não o inclui",
+  foraDoIntervalo.transactionCount === 0 ||
+    !listTransactionsInRange(`${mes}-01`, `${mes}-02`).some(
+      (t) => t.description === `Gasto do periodo ${marca}`,
+    ),
+  true,
+);
+
+// Período curto agrupa por dia; período longo agrupa por mês.
+check("período de 1 semana agrupa por dia", getRangeSeries(diaBase, addDaysTeste(diaBase, 6)).bucket, "dia");
+check("período de 1 ano agrupa por mês", getRangeSeries(`${mes}-01`, `${Number(mes.slice(0, 4)) + 1}-01-01`).bucket, "mes");
+
+function addDaysTeste(d: string, n: number): string {
+  const [y, m, dd] = d.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, dd) + n * 86_400_000);
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
+}
 
 console.log(`\n${ok} passaram, ${fail} falharam\n`);
 if (fail > 0) process.exit(1);

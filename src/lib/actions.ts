@@ -31,7 +31,7 @@ import type { ParsedEntry } from "./categorize";
 /** As telas que dependem de lançamento. Revalidadas juntas após cada escrita. */
 function revalidateFinance(): void {
   revalidatePath("/");
-  revalidatePath("/lancamentos");
+  revalidatePath("/relatorios");
   revalidatePath("/contas");
   revalidatePath("/economia");
   revalidatePath("/investimentos");

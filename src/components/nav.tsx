@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  ReceiptText,
+  ChartColumn,
   CalendarClock,
   TrendingUp,
   PiggyBank,
@@ -25,7 +25,7 @@ import {
 
 const ITEMS = [
   { href: "/", label: "Resumo", icon: LayoutDashboard },
-  { href: "/lancamentos", label: "Lançar", icon: ReceiptText },
+  { href: "/relatorios", label: "Relatórios", icon: ChartColumn },
   { href: "/contas", label: "A pagar", icon: CalendarClock },
   { href: "/investimentos", label: "Investir", icon: TrendingUp },
   { href: "/economia", label: "Economia", icon: PiggyBank },

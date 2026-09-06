@@ -242,16 +242,46 @@ export interface MonthlyDatum {
  * cabem num eixo só, sem o truque do eixo duplo.
  */
 export function MonthlyTrendChart({ data }: { data: MonthlyDatum[] }) {
-  const shaped = data.map((d) => ({ ...d, label: formatMonth(d.month) }));
+  return (
+    <TrendChart
+      titulo="Evolução mensal"
+      dica="Entradas e saídas nos últimos meses"
+      data={data.map((d) => ({ ...d, label: formatMonth(d.month) }))}
+    />
+  );
+}
+
+/**
+ * Linha de tendência com rótulos já prontos.
+ *
+ * Separado do MonthlyTrendChart porque o relatório agrupa por DIA em períodos
+ * curtos e por MÊS em períodos longos — o gráfico não pode presumir que a
+ * chave do eixo é um mês.
+ */
+export function TrendChart({
+  titulo,
+  dica,
+  data,
+}: {
+  titulo: string;
+  dica: string;
+  data: Array<{
+    label: string;
+    incomeCents: number;
+    expenseCents: number;
+    balanceCents: number;
+  }>;
+}) {
+  const shaped = data;
 
   return (
     <ChartFrame
-      title="Evolução mensal"
-      hint="Entradas e saídas nos últimos meses"
+      title={titulo}
+      hint={dica}
       table={
         <DataTable
-          caption="Entradas, saídas e saldo por mês"
-          columns={["Mês", "Entradas", "Saídas", "Saldo"]}
+          caption="Entradas, saídas e saldo por período"
+          columns={["Período", "Entradas", "Saídas", "Saldo"]}
           rows={shaped.map((d) => [
             d.label,
             formatBRL(d.incomeCents),
