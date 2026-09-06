@@ -1,18 +1,16 @@
 import Link from "next/link";
 import { CreditCard } from "lucide-react";
 
+import { CardPurchaseForm } from "@/components/card-purchase-form";
 import { InvoiceImport } from "@/components/invoice-import";
-import { ManualEntry } from "@/components/manual-entry";
 import { Badge, Card, CardTitle, EmptyState, Money, PageHeader, ProgressBar } from "@/components/ui";
 import { MonthNav } from "@/components/month-nav";
 import { currentMonth, formatDay, today } from "@/lib/dates";
 import { formatBRL, safePercent } from "@/lib/money";
 import {
   getCardInvoice,
-  listAccounts,
   listAccountsWithBalance,
   listCategories,
-  listIncomeSources,
   listTransactionsInRange,
 } from "@/lib/repo";
 import { monthBounds } from "@/lib/dates";
@@ -59,8 +57,13 @@ export default async function CartoesPage({
   const { start, end } = monthBounds(month);
 
   const faturaCents = getCardInvoice(cartao.id, month);
+  /*
+   * Compras e estornos. O estorno é ENTRADA no cartão — some daqui se filtrar
+   * só despesa, e aí a soma da lista não bate com o valor da fatura, que já
+   * desconta a devolução.
+   */
   const comprasDoMes = listTransactionsInRange(start, end).filter(
-    (t) => t.accountId === cartao.id && t.type === "EXPENSE",
+    (t) => t.accountId === cartao.id,
   );
 
   const usado = Math.abs(cartao.balanceCents);
@@ -211,20 +214,20 @@ export default async function CartoesPage({
                       {t.purchaseDate ? ` · comprado ${formatDay(t.purchaseDate)}` : ""}
                     </span>
                   </span>
+                  {t.type === "INCOME" ? <Badge tone="positive">estorno</Badge> : null}
                   {t.nature === "PARCELADO" ? <Badge tone="info">parcelado</Badge> : null}
-                  <Money cents={t.amountCents} size="sm" tone="negative" />
+                  <Money
+                    cents={t.amountCents}
+                    size="sm"
+                    tone={t.type === "INCOME" ? "positive" : "negative"}
+                  />
                 </li>
               ))}
             </ul>
           )}
         </Card>
 
-        <ManualEntry
-          categories={categories}
-          accounts={listAccounts()}
-          incomeSources={listIncomeSources()}
-          today={today()}
-        />
+        <CardPurchaseForm card={cartao} categories={categories} today={today()} />
       </div>
     </>
   );

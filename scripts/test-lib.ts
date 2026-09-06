@@ -218,6 +218,18 @@ check(
 );
 check("virada de ano na fatura", firstInvoiceDueDate("2026-12-28", 25, 5), "2027-02-05");
 
+/*
+ * Cartão que fecha dia 3 e vence dia 10: a virada no começo do mês.
+ *
+ * É o caso do cartão real — "as compras até dia 3, que é a virada, entram na de
+ * setembro; as demais em outubro". Fechamento no começo do mês é o que mais
+ * confunde, porque quase todo o mês já pertence à fatura SEGUINTE.
+ */
+check("dia 1 entra na fatura deste mes", firstInvoiceDueDate("2026-09-01", 3, 10), "2026-09-10");
+check("dia 3, a virada, ainda entra", firstInvoiceDueDate("2026-09-03", 3, 10), "2026-09-10");
+check("dia 4 ja e a fatura seguinte", firstInvoiceDueDate("2026-09-04", 3, 10), "2026-10-10");
+check("dia 30 tambem e a seguinte", firstInvoiceDueDate("2026-09-30", 3, 10), "2026-10-10");
+
 console.log("\n== parcelamento no texto ==");
 const p1 = parseBulk("tenis 380 4x", categories);
 check("valor antes do Nx = total", p1[0].amountCents, 38000);
