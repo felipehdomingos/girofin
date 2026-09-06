@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Landmark, Building2, Tags } from "lucide-react";
+import { Landmark, Building2, CreditCard, Tags } from "lucide-react";
 
 import { AccountManager } from "./account-manager";
 import { CategoryManager } from "./category-manager";
@@ -26,7 +26,8 @@ import type {
  */
 
 const ABAS = [
-  { id: "bancos", label: "Contas e cartões", icon: Landmark },
+  { id: "contas", label: "Contas", icon: Landmark },
+  { id: "cartoes", label: "Cartões", icon: CreditCard },
   { id: "empresas", label: "Empresas", icon: Building2 },
   { id: "categorias", label: "Categorias", icon: Tags },
 ] as const;
@@ -54,7 +55,7 @@ export function SettingsTabs({
   nextSourceColor: string;
   nextCategoryColor: string;
 }) {
-  const [aba, setAba] = useState<AbaId>("bancos");
+  const [aba, setAba] = useState<AbaId>("contas");
 
   return (
     <>
@@ -87,9 +88,21 @@ export function SettingsTabs({
         })}
       </div>
 
-      {aba === "bancos" ? (
+      {aba === "contas" ? (
         <AccountManager
-          show="bancos"
+          show="contas"
+          accounts={accounts}
+          banks={banks}
+          incomeSources={incomeSources}
+          incomeThisMonth={incomeThisMonth}
+          nextAccountColor={nextAccountColor}
+          nextSourceColor={nextSourceColor}
+        />
+      ) : null}
+
+      {aba === "cartoes" ? (
+        <AccountManager
+          show="cartoes"
           accounts={accounts}
           banks={banks}
           incomeSources={incomeSources}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { EntryDialog } from "@/components/entry-dialog";
+import { SetupAlert } from "@/components/setup-alert";
 import { TransactionList } from "@/components/transaction-list";
 import { PageHeader } from "@/components/ui";
 import { currentMonth, formatMonthLong, today } from "@/lib/dates";
@@ -64,6 +65,8 @@ export default async function LancamentosPage({
           </div>
         }
       />
+
+      <SetupAlert hasAccounts={accounts.length > 0} />
 
       <TransactionList transactions={transactions} month={month} />
     </>

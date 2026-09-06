@@ -13,6 +13,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import { EntryDialog } from "@/components/entry-dialog";
+import { SetupAlert } from "@/components/setup-alert";
 import {
   currentMonth,
   formatDay,
@@ -49,6 +50,7 @@ export default function DashboardPage() {
   const openBillsCents = getOpenBillsTotal(month);
   const recent = listTransactions({ month, limit: 8 });
   const progress = monthProgress(month);
+  const accounts = listAccounts();
 
   const pending = bills.filter((b) => b.status !== "PAID");
   const overdue = bills.filter((b) => b.status === "OVERDUE");
@@ -66,12 +68,14 @@ export default function DashboardPage() {
         actions={
           <EntryDialog
             categories={listCategories()}
-            accounts={listAccounts()}
+            accounts={accounts}
             incomeSources={listIncomeSources()}
             today={today()}
           />
         }
       />
+
+      <SetupAlert hasAccounts={accounts.length > 0} />
 
       {overdue.length > 0 ? (
         <div

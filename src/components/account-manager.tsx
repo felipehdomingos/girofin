@@ -13,7 +13,7 @@ import {
 import { ActionButton } from "./action-button";
 import { BankLogo, BankPicker, ColorPicker } from "./bank-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
-import { Badge, Card, CardTitle, EmptyState, Money } from "./ui";
+import { Badge, Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
 import {
   createAccountForm,
   createIncomeSourceForm,
@@ -21,6 +21,7 @@ import {
   deleteIncomeSourceAction,
 } from "@/lib/actions";
 import type { Bank } from "@/lib/banks";
+import { formatBRL, safePercent } from "@/lib/money";
 import { VIZ_PALETTE } from "@/lib/palette";
 import {
   ACCOUNT_KIND_LABEL,
@@ -40,12 +41,16 @@ const KIND_ICON: Record<AccountKind, typeof Wallet> = {
 };
 
 /**
- * Cadastro de bancos/cartões e de empresas (fontes de renda).
+ * Cadastros de onde o dinheiro está e de onde ele vem.
  *
- * O saldo de cada carteira é sempre CALCULADO: saldo inicial + entradas −
- * saídas. Nunca guardado numa coluna. Um saldo gravado divergiria do extrato na
- * primeira exclusão de lançamento, e não haveria como saber qual dos dois
- * está certo.
+ * CONTA e CARTÃO são cadastros SEPARADOS de propósito. São objetos diferentes:
+ * conta tem saldo (dinheiro que você tem), cartão tem limite e fatura (dinheiro
+ * que você deve). Um formulário só, com metade dos campos aparecendo e sumindo
+ * conforme o tipo, obrigava o usuário a descobrir qual metade valia para ele.
+ *
+ * O saldo de cada conta é sempre CALCULADO: saldo inicial + entradas − saídas.
+ * Nunca guardado numa coluna. Um saldo gravado divergiria do extrato na
+ * primeira exclusão de lançamento, e não haveria como saber qual está certo.
  */
 export function AccountManager({
   accounts,
@@ -62,9 +67,11 @@ export function AccountManager({
   incomeThisMonth: IncomeSourceTotal[];
   nextAccountColor: string;
   nextSourceColor: string;
-  /** Qual bloco renderizar — as abas de Configurações mostram um de cada vez. */
-  show?: "all" | "bancos" | "empresas";
+  show?: "all" | "contas" | "cartoes" | "empresas";
 }) {
+  const contas = accounts.filter((a) => a.kind !== "CARTAO");
+  const cartoes = accounts.filter((a) => a.kind === "CARTAO");
+
   if (show === "empresas") {
     return (
       <SecaoEmpresas
@@ -75,23 +82,18 @@ export function AccountManager({
     );
   }
 
-  if (show === "bancos") {
-    return (
-      <SecaoBancos
-        accounts={accounts}
-        banks={banks}
-        nextAccountColor={nextAccountColor}
-      />
-    );
+  if (show === "contas") {
+    return <SecaoContas contas={contas} banks={banks} nextColor={nextAccountColor} />;
+  }
+
+  if (show === "cartoes") {
+    return <SecaoCartoes cartoes={cartoes} banks={banks} nextColor={nextAccountColor} />;
   }
 
   return (
     <div className="flex flex-col gap-2xl">
-      <SecaoBancos
-        accounts={accounts}
-        banks={banks}
-        nextAccountColor={nextAccountColor}
-      />
+      <SecaoContas contas={contas} banks={banks} nextColor={nextAccountColor} />
+      <SecaoCartoes cartoes={cartoes} banks={banks} nextColor={nextAccountColor} />
       <SecaoEmpresas
         incomeSources={incomeSources}
         incomeThisMonth={incomeThisMonth}
@@ -101,84 +103,60 @@ export function AccountManager({
   );
 }
 
-// ------------------------------------------------------------------ bancos
+// ------------------------------------------------------- contas bancárias
 
-function SecaoBancos({
-  accounts,
+function SecaoContas({
+  contas,
   banks,
-  nextAccountColor,
+  nextColor,
 }: {
-  accounts: AccountWithBalance[];
+  contas: AccountWithBalance[];
   banks: Bank[];
-  nextAccountColor: string;
+  nextColor: string;
 }) {
-  const [kind, setKind] = useState<AccountKind>("CORRENTE");
   const [bank, setBank] = useState<Bank | null>(null);
-  const [color, setColor] = useState(nextAccountColor);
+  const [color, setColor] = useState(nextColor);
   const [nome, setNome] = useState("");
+  const [kind, setKind] = useState<Exclude<AccountKind, "CARTAO">>("CORRENTE");
 
-  const totalCents = accounts
-    // Cartão é dívida, não patrimônio: somá-lo ao saldo das contas inflaria o
-    // total. Fatura em aberto aparece separada, com sinal negativo.
-    .filter((a) => a.kind !== "CARTAO")
-    .reduce((acc, a) => acc + a.balanceCents, 0);
-
-  const cardDebtCents = accounts
-    .filter((a) => a.kind === "CARTAO")
-    .reduce((acc, a) => acc + a.balanceCents, 0);
+  const totalCents = contas.reduce((acc, a) => acc + a.balanceCents, 0);
 
   return (
     <div className="grid gap-xl lg:grid-cols-[1.4fr_1fr]">
       <Card>
-        <CardTitle hint={`${accounts.length} cadastrados`}>
-          Bancos, cartões e carteiras
+        <CardTitle hint={`${contas.length} cadastradas`}>
+          Contas — onde o seu dinheiro está
         </CardTitle>
 
-        {accounts.length === 0 ? (
-          <EmptyState title="Nada cadastrado ainda">
-            Cadastre suas contas e cartões ao lado. Depois disso, cada lançamento
-            pode dizer de onde o dinheiro saiu — e o saldo de cada um se atualiza
-            sozinho.
+        {contas.length === 0 ? (
+          <EmptyState title="Nenhuma conta cadastrada">
+            Cadastre ao lado a conta onde cai o seu salário. É o mínimo para
+            começar a lançar: todo gasto sai de algum lugar e toda entrada cai em
+            algum lugar.
           </EmptyState>
         ) : (
           <>
-            <div className="mb-xl grid gap-lg sm:grid-cols-2">
-              <div className="rounded-control border border-border bg-muted/40 p-lg">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Total disponível
-                </p>
-                <p className="mt-sm">
-                  <Money cents={totalCents} size="lg" tone="auto" />
-                </p>
-                <p className="mt-xs text-[11px] text-muted-foreground">
-                  Sem contar cartão de crédito
-                </p>
-              </div>
-              {cardDebtCents !== 0 ? (
-                <div className="rounded-control border border-border bg-muted/40 p-lg">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Faturas em aberto
-                  </p>
-                  <p className="mt-sm">
-                    <Money cents={Math.abs(cardDebtCents)} size="lg" tone="negative" />
-                  </p>
-                  <p className="mt-xs text-[11px] text-muted-foreground">
-                    Já lançado, ainda não pago
-                  </p>
-                </div>
-              ) : null}
+            <div className="mb-xl rounded-control border border-border bg-muted/40 p-lg">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Total disponível
+              </p>
+              <p className="mt-sm">
+                <Money cents={totalCents} size="lg" tone="auto" />
+              </p>
+              <p className="mt-xs text-[11px] text-muted-foreground">
+                Somando todas as contas. Cartão de crédito é dívida e fica na
+                outra aba.
+              </p>
             </div>
 
             <ul className="flex flex-col">
-              {accounts.map((a) => {
+              {contas.map((a) => {
                 const Icon = KIND_ICON[a.kind];
                 return (
                   <li
                     key={a.id}
                     className="flex flex-wrap items-center gap-lg border-b border-border py-lg last:border-0"
                   >
-                    {/* Logo real do banco quando existe; ícone do tipo de
-                        conta quando não. */}
                     {a.logoUrl ? (
                       <BankLogo bank={{ name: a.name, logoUrl: a.logoUrl }} />
                     ) : (
@@ -195,28 +173,14 @@ function SecaoBancos({
                     )}
 
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-md">
-                        <span className="truncate text-sm">{a.name}</span>
-                        {a.last4 ? (
-                          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                            •••• {a.last4}
-                          </span>
-                        ) : null}
-                      </span>
+                      <span className="block truncate text-sm">{a.name}</span>
                       <span className="text-xs text-muted-foreground">
                         {ACCOUNT_KIND_LABEL[a.kind]}
-                        {a.kind === "CARTAO" && a.closingDay && a.dueDay
-                          ? ` · fecha dia ${a.closingDay}, vence dia ${a.dueDay}`
-                          : ""}
                       </span>
                     </span>
 
                     <span className="text-right">
-                      <Money
-                        cents={a.balanceCents}
-                        size="md"
-                        tone={a.kind === "CARTAO" ? "negative" : "auto"}
-                      />
+                      <Money cents={a.balanceCents} size="md" tone="auto" />
                       <span className="block text-[11px] text-muted-foreground">
                         no mês: +{(a.monthInCents / 100).toFixed(0)} / −
                         {(a.monthOutCents / 100).toFixed(0)}
@@ -241,13 +205,12 @@ function SecaoBancos({
       </Card>
 
       <Card>
-        <CardTitle>Cadastrar banco ou cartão</CardTitle>
+        <CardTitle>Nova conta</CardTitle>
 
-        <ActionForm action={createAccountForm} submitLabel="Cadastrar">
+        <ActionForm action={createAccountForm} submitLabel="Cadastrar conta">
           {(state) => (
             <>
-              {/* Campos escondidos: o que o BankPicker escolheu vai junto no
-                  submit sem o usuário ter que digitar nada disso. */}
+              <input type="hidden" name="kind" value={kind} />
               <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
               <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
               <input type="hidden" name="logoUrl" value={bank?.logoUrl ?? ""} />
@@ -255,137 +218,60 @@ function SecaoBancos({
               <Field
                 label="Banco"
                 name="bank"
-                hint="Lista oficial do Banco Central. Opcional — dá para cadastrar dinheiro em espécie sem banco."
+                hint="Lista oficial do Banco Central. Deixe em branco para dinheiro em espécie."
               >
                 <BankPicker
                   banks={banks}
                   selected={bank}
                   onSelect={(b) => {
                     setBank(b);
-                    // Pré-preenche o apelido com o nome do banco: na maioria
-                    // dos casos é exatamente isso que a pessoa ia digitar.
                     if (b && !nome.trim()) setNome(b.fullName);
                   }}
                 />
               </Field>
 
               <Field
-                label={kind === "CARTAO" ? "Apelido do cartão" : "Apelido da conta"}
+                label="Apelido"
                 name="name"
                 required
                 error={fieldError(state, "name")}
-                hint="Como você chama no dia a dia. É esse nome que aparece nos lançamentos."
+                hint="É esse nome que aparece na hora de lançar."
               >
                 <Input
-                  id="name"
+                  id="acc-name"
                   name="name"
                   required
                   maxLength={40}
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
-                  placeholder={kind === "CARTAO" ? "Nubank roxinho" : "Itaú corrente"}
+                  placeholder="Itaú corrente"
                 />
               </Field>
 
-              <Field label="Tipo" name="kind" required>
+              <Field label="Tipo" name="kindVisible" required>
                 <Select
-                  id="kind"
-                  name="kind"
+                  id="acc-kind"
                   value={kind}
-                  onChange={(e) => setKind(e.target.value as AccountKind)}
+                  onChange={(e) =>
+                    setKind(e.target.value as Exclude<AccountKind, "CARTAO">)
+                  }
                   required
                 >
-                  {(Object.keys(ACCOUNT_KIND_LABEL) as AccountKind[]).map((k) => (
-                    <option key={k} value={k}>
-                      {ACCOUNT_KIND_LABEL[k]}
-                    </option>
-                  ))}
+                  <option value="CORRENTE">Conta corrente</option>
+                  <option value="POUPANCA">Poupança</option>
+                  <option value="INVESTIMENTO">Investimento</option>
+                  <option value="CARTEIRA">Dinheiro em espécie</option>
                 </Select>
               </Field>
 
-              {/* Fechamento, vencimento e finais só existem em cartão. */}
-              {kind === "CARTAO" ? (
-                <>
-                  <Field
-                    label="4 últimos dígitos"
-                    name="last4"
-                    error={fieldError(state, "last4")}
-                    hint="Opcional, para diferenciar dois cartões do mesmo banco. O número completo nunca é pedido nem guardado."
-                  >
-                    <Input
-                      id="last4"
-                      name="last4"
-                      inputMode="numeric"
-                      maxLength={4}
-                      pattern="\d{4}"
-                      placeholder="1234"
-                      className="w-24 font-mono"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Limite do cartão"
-                    name="creditLimit"
-                    error={fieldError(state, "creditLimit")}
-                    hint="Opcional. Com ele o app mostra quanto do limite já foi usado."
-                  >
-                    <Input
-                      id="creditLimit"
-                      name="creditLimit"
-                      inputMode="decimal"
-                      placeholder="5.000,00"
-                      className="font-mono"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Dia do fechamento da fatura"
-                    name="closingDay"
-                    required
-                    error={fieldError(state, "closingDay")}
-                    hint="Compra feita depois deste dia entra só na fatura seguinte."
-                  >
-                    <Input
-                      id="closingDay"
-                      name="closingDay"
-                      type="number"
-                      min={1}
-                      max={31}
-                      required
-                      defaultValue={25}
-                      className="w-24 font-mono"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Dia do vencimento da fatura"
-                    name="dueDay"
-                    required
-                    error={fieldError(state, "dueDay")}
-                    hint="É a data em que o dinheiro sai de fato."
-                  >
-                    <Input
-                      id="dueDay"
-                      name="dueDay"
-                      type="number"
-                      min={1}
-                      max={31}
-                      required
-                      defaultValue={5}
-                      className="w-24 font-mono"
-                    />
-                  </Field>
-                </>
-              ) : null}
-
               <Field
-                label={kind === "CARTAO" ? "Fatura em aberto hoje" : "Saldo atual"}
+                label="Saldo atual"
                 name="opening"
                 error={fieldError(state, "opening")}
-                hint="Aceita negativo (use - na frente)."
+                hint="Quanto tem hoje. Aceita negativo (use - na frente) para cheque especial."
               >
                 <Input
-                  id="opening"
+                  id="acc-opening"
                   name="opening"
                   inputMode="decimal"
                   placeholder="0,00"
@@ -397,8 +283,293 @@ function SecaoBancos({
                 label="Cor"
                 name="color"
                 error={fieldError(state, "color")}
-                hint="Usada nos gráficos. Paleta validada para contraste e daltonismo."
+                hint="Usada nos gráficos."
               >
+                <ColorPicker
+                  name="color"
+                  value={color}
+                  onChange={setColor}
+                  palette={VIZ_PALETTE}
+                />
+              </Field>
+            </>
+          )}
+        </ActionForm>
+      </Card>
+    </div>
+  );
+}
+
+// -------------------------------------------------- cartões de crédito
+
+function SecaoCartoes({
+  cartoes,
+  banks,
+  nextColor,
+}: {
+  cartoes: AccountWithBalance[];
+  banks: Bank[];
+  nextColor: string;
+}) {
+  const [bank, setBank] = useState<Bank | null>(null);
+  const [color, setColor] = useState(nextColor);
+  const [nome, setNome] = useState("");
+
+  // Fatura é dívida: o saldo do cartão é negativo, e o valor devido é o módulo.
+  const faturaTotal = cartoes.reduce((acc, a) => acc + Math.abs(a.balanceCents), 0);
+
+  return (
+    <div className="grid gap-xl lg:grid-cols-[1.4fr_1fr]">
+      <Card>
+        <CardTitle hint={`${cartoes.length} cadastrados`}>
+          Cartões de crédito — o que você já deve
+        </CardTitle>
+
+        {cartoes.length === 0 ? (
+          <EmptyState title="Nenhum cartão cadastrado">
+            Cadastre ao lado. Com o fechamento e o vencimento da fatura, o app
+            joga cada parcela no mês em que ela realmente vai ser cobrada.
+          </EmptyState>
+        ) : (
+          <>
+            <div className="mb-xl rounded-control border border-border bg-muted/40 p-lg">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Total em faturas
+              </p>
+              <p className="mt-sm">
+                <Money cents={faturaTotal} size="lg" tone="negative" />
+              </p>
+              <p className="mt-xs text-[11px] text-muted-foreground">
+                Já lançado, ainda não pago
+              </p>
+            </div>
+
+            <ul className="flex flex-col">
+              {cartoes.map((c) => {
+                const usado = Math.abs(c.balanceCents);
+                const pctLimite = c.creditLimitCents
+                  ? safePercent(usado, c.creditLimitCents)
+                  : null;
+
+                return (
+                  <li
+                    key={c.id}
+                    className="border-b border-border py-lg last:border-0"
+                  >
+                    <div className="flex flex-wrap items-center gap-lg">
+                      {c.logoUrl ? (
+                        <BankLogo bank={{ name: c.name, logoUrl: c.logoUrl }} />
+                      ) : (
+                        <span
+                          className="flex size-8 shrink-0 items-center justify-center rounded-control"
+                          style={{ backgroundColor: `${c.color}22` }}
+                        >
+                          <CreditCard
+                            className="size-4"
+                            style={{ color: c.color }}
+                            aria-hidden="true"
+                          />
+                        </span>
+                      )}
+
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-md">
+                          <span className="truncate text-sm">{c.name}</span>
+                          {c.last4 ? (
+                            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                              •••• {c.last4}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {c.closingDay && c.dueDay
+                            ? `fecha dia ${c.closingDay} · vence dia ${c.dueDay}`
+                            : "sem ciclo definido"}
+                        </span>
+                      </span>
+
+                      <span className="text-right">
+                        <Money cents={usado} size="md" tone="negative" />
+                        {c.creditLimitCents ? (
+                          <span className="block text-[11px] text-muted-foreground">
+                            de {formatBRL(c.creditLimitCents)}
+                          </span>
+                        ) : null}
+                      </span>
+
+                      <ActionButton
+                        action={() => deleteAccountAction(c.id)}
+                        confirm
+                        confirmLabel="Excluir?"
+                        ariaLabel={`Excluir ${c.name}`}
+                        className="rounded-control p-sm text-muted-foreground hover:bg-muted hover:text-neg"
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </ActionButton>
+                    </div>
+
+                    {pctLimite !== null ? (
+                      <div className="mt-md">
+                        <ProgressBar
+                          value={usado}
+                          max={c.creditLimitCents ?? 1}
+                          label={`${c.name}: ${pctLimite.toFixed(0)}% do limite usado`}
+                          tone={
+                            pctLimite > 80
+                              ? "negative"
+                              : pctLimite > 50
+                                ? "warning"
+                                : "positive"
+                          }
+                        />
+                        <p className="mt-xs text-[11px] text-muted-foreground">
+                          {pctLimite.toFixed(0)}% do limite usado ·{" "}
+                          {formatBRL(Math.max((c.creditLimitCents ?? 0) - usado, 0))}{" "}
+                          disponível
+                        </p>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </Card>
+
+      <Card>
+        <CardTitle>Novo cartão</CardTitle>
+
+        <ActionForm action={createAccountForm} submitLabel="Cadastrar cartão">
+          {(state) => (
+            <>
+              {/* Tipo fixo: este formulário só cadastra cartão. */}
+              <input type="hidden" name="kind" value="CARTAO" />
+              <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
+              <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
+              <input type="hidden" name="logoUrl" value={bank?.logoUrl ?? ""} />
+
+              <Field label="Banco emissor" name="bank" hint="Lista oficial do Banco Central.">
+                <BankPicker
+                  banks={banks}
+                  selected={bank}
+                  onSelect={(b) => {
+                    setBank(b);
+                    if (b && !nome.trim()) setNome(b.fullName);
+                  }}
+                />
+              </Field>
+
+              <Field
+                label="Apelido do cartão"
+                name="name"
+                required
+                error={fieldError(state, "name")}
+                hint="Como você chama no dia a dia."
+              >
+                <Input
+                  id="card-name"
+                  name="name"
+                  required
+                  maxLength={40}
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  placeholder="Nubank roxinho"
+                />
+              </Field>
+
+              <Field
+                label="4 últimos dígitos"
+                name="last4"
+                error={fieldError(state, "last4")}
+                hint="Opcional, para diferenciar dois cartões do mesmo banco. O número completo nunca é pedido."
+              >
+                <Input
+                  id="card-last4"
+                  name="last4"
+                  inputMode="numeric"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  placeholder="1234"
+                  className="w-24 font-mono"
+                />
+              </Field>
+
+              <Field
+                label="Limite total"
+                name="creditLimit"
+                error={fieldError(state, "creditLimit")}
+                hint="Opcional. Com ele o app mostra quanto do limite já foi usado."
+              >
+                <Input
+                  id="card-limit"
+                  name="creditLimit"
+                  inputMode="decimal"
+                  placeholder="5.000,00"
+                  className="font-mono"
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-lg">
+                <Field
+                  label="Fecha dia"
+                  name="closingDay"
+                  required
+                  error={fieldError(state, "closingDay")}
+                >
+                  <Input
+                    id="card-closing"
+                    name="closingDay"
+                    type="number"
+                    min={1}
+                    max={31}
+                    required
+                    defaultValue={25}
+                    className="font-mono"
+                  />
+                </Field>
+
+                <Field
+                  label="Vence dia"
+                  name="dueDay"
+                  required
+                  error={fieldError(state, "dueDay")}
+                >
+                  <Input
+                    id="card-due"
+                    name="dueDay"
+                    type="number"
+                    min={1}
+                    max={31}
+                    required
+                    defaultValue={5}
+                    className="font-mono"
+                  />
+                </Field>
+              </div>
+
+              <p className="rounded-control border border-border bg-muted/50 p-lg text-[11px] leading-relaxed text-muted-foreground">
+                Compra feita <strong>até</strong> o dia do fechamento entra na
+                fatura que está fechando. Depois disso, já cai na seguinte — é
+                assim que o app sabe em que mês a parcela vai pesar.
+              </p>
+
+              <Field
+                label="Fatura em aberto hoje"
+                name="opening"
+                error={fieldError(state, "opening")}
+                hint="Quanto já está lançado e ainda não foi pago. Use - na frente."
+              >
+                <Input
+                  id="card-opening"
+                  name="opening"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  className="font-mono"
+                />
+              </Field>
+
+              <Field label="Cor" name="color" error={fieldError(state, "color")}>
                 <ColorPicker
                   name="color"
                   value={color}
@@ -425,6 +596,8 @@ function SecaoEmpresas({
   incomeThisMonth: IncomeSourceTotal[];
   nextSourceColor: string;
 }) {
+  const [cor, setCor] = useState(nextSourceColor);
+
   return (
     <div className="grid gap-xl lg:grid-cols-[1.4fr_1fr]">
       <Card>
@@ -516,19 +689,13 @@ function SecaoEmpresas({
                 </Select>
               </Field>
 
-              <Field label="Cor" name="color" required error={fieldError(state, "color")}>
-                <Select
-                  id="src-color"
+              <Field label="Cor" name="color" error={fieldError(state, "color")}>
+                <ColorPicker
                   name="color"
-                  defaultValue={nextSourceColor}
-                  required
-                >
-                  {VIZ_PALETTE.map((hex, i) => (
-                    <option key={hex} value={hex}>
-                      Cor {i + 1} ({hex})
-                    </option>
-                  ))}
-                </Select>
+                  value={cor}
+                  onChange={setCor}
+                  palette={VIZ_PALETTE}
+                />
               </Field>
             </>
           )}
