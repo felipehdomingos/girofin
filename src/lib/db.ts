@@ -42,9 +42,13 @@ let instance: DatabaseSync | null = null;
 const userInstances = new Map<string, DatabaseSync>();
 
 function assertFinanceStorageMode(): void {
+  const isStagingAppService =
+    process.env.WEBSITE_SITE_NAME?.startsWith("girofin-staging-") === true;
+
   if (
     (process.env.NODE_ENV === "production" || authConfigured()) &&
     process.env.APP_ENV !== "staging" &&
+    !isStagingAppService &&
     process.env.ALLOW_UNSCOPED_FINANCEIRO_DB !== "true"
   ) {
     throw new Error(
