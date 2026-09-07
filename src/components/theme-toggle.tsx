@@ -5,19 +5,26 @@ import { useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
+function applyTheme(theme: Theme) {
+  document.documentElement.dataset.theme = theme;
+  document.body.dataset.theme = theme;
+  document.documentElement.style.colorScheme = theme;
+  document.body.style.colorScheme = theme;
+}
+
 export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
     const saved = window.localStorage.getItem("girofin-theme");
     const nextTheme: Theme = saved === "light" ? "light" : "dark";
-    document.documentElement.dataset.theme = nextTheme;
+    applyTheme(nextTheme);
     setTheme(nextTheme);
   }, []);
 
   function toggleTheme() {
     const nextTheme: Theme = theme === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = nextTheme;
+    applyTheme(nextTheme);
     window.localStorage.setItem("girofin-theme", nextTheme);
     setTheme(nextTheme);
   }

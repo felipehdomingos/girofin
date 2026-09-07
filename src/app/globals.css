@@ -68,15 +68,21 @@
   --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
 }
 
+:root[data-theme="dark"],
+body[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"],
+body[data-theme="light"] {
+  color-scheme: light;
+}
+
 @layer base {
   body {
     background: var(--color-background);
     color: var(--color-foreground);
     color-scheme: dark;
-  }
-
-  :root[data-theme="light"] body {
-    color-scheme: light;
   }
 
   /* Foco visível em tudo que recebe teclado. A checklist proíbe
