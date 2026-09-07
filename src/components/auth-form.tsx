@@ -93,16 +93,6 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
         <h1 className="mt-lg text-2xl font-semibold">{copy[0]}</h1>
         <p className="mt-sm text-sm text-muted-foreground">{copy[1]}</p>
 
-        {mode === "login" || mode === "register" ? (
-          <>
-            <button type="button" onClick={() => { window.location.href = "/api/v1/auth/google/start"; }} className="mt-xl flex w-full items-center justify-center gap-md rounded-control border border-border bg-background px-xl py-md text-sm font-semibold transition-colors hover:bg-muted">
-              <span aria-hidden="true" className="text-base font-bold">G</span>
-              Continuar com Google
-            </button>
-            <div className="mt-xl flex items-center gap-md text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" /><span>ou continue com e-mail</span><span className="h-px flex-1 bg-border" /></div>
-          </>
-        ) : null}
-
         <form onSubmit={submit} className="mt-2xl flex flex-col gap-lg">
           {mode === "register" ? (
             <label className="flex flex-col gap-sm text-sm">
@@ -172,6 +162,16 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
             {pending ? "Aguarde..." : copy[0]}
           </button>
         </form>
+
+        {mode === "login" || mode === "register" ? (
+          <>
+            <div className="mt-xl flex items-center gap-md text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" /><span>ou</span><span className="h-px flex-1 bg-border" /></div>
+            <button type="button" onClick={() => { window.location.href = "/api/v1/auth/google/start"; }} className="mt-xl flex w-full items-center justify-center gap-md rounded-control bg-[#db4437] px-xl py-md text-sm font-semibold text-white transition-colors hover:bg-[#c23325]">
+              <span aria-hidden="true" className="text-base font-bold">G</span>
+              Continuar com Google
+            </button>
+          </>
+        ) : null}
 
         <nav className="mt-xl flex flex-wrap gap-lg text-xs text-muted-foreground">
           {mode !== "login" ? <Link href="/login" className="underline">Entrar</Link> : null}
