@@ -55,6 +55,8 @@ export async function ensureAuthSchema(): Promise<void> {
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS city TEXT;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS state CHAR(2);
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS google_subject TEXT;
+        CREATE UNIQUE INDEX IF NOT EXISTS app_users_google_subject_idx ON app_users(google_subject) WHERE google_subject IS NOT NULL;
         CREATE TABLE IF NOT EXISTS app_sessions (
           id UUID PRIMARY KEY,
           user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -200,6 +202,41 @@ export async function deleteSession(token: string): Promise<void> {
   if (!authConfigured() || !token) return;
   await ensureAuthSchema();
   await getPool().query(`DELETE FROM app_sessions WHERE token_hash = $1`, [digest(token)]);
+}
+
+export async function findOrCreateGoogleUser(input: {
+  subject: string;
+  email: string;
+  name: string;
+}): Promise<AuthUser> {
+  await ensureAuthSchema();
+  const email = normalizeEmail(input.email);
+  const existing = await getPool().query<AuthUser & { google_subject: string | null }>(
+    `SELECT id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified",
+            phone, birth_date AS "birthDate", city, state,
+            avatar_data_url AS "avatarDataUrl", google_subject
+       FROM app_users WHERE google_subject = $1 OR email = $2 LIMIT 1`,
+    [input.subject, email],
+  );
+  const user = existing.rows[0];
+  if (user) {
+    if (user.google_subject && user.google_subject !== input.subject) throw new Error("GOOGLE_ACCOUNT_MISMATCH");
+    const updated = await getPool().query<AuthUser>(
+      `UPDATE app_users SET google_subject = $1, email_verified_at = COALESCE(email_verified_at, now()), name = $2
+        WHERE id = $3
+        RETURNING id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified",
+                  phone, birth_date AS "birthDate", city, state, avatar_data_url AS "avatarDataUrl"`,
+      [input.subject, input.name.trim() || user.name, user.id],
+    );
+    return updated.rows[0];
+  }
+  const created = await getPool().query<AuthUser>(
+    `INSERT INTO app_users (id, email, password_hash, name, email_verified_at, google_subject)
+     VALUES ($1, $2, $3, $4, now(), $5)
+     RETURNING id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified"`,
+    [randomUUID(), email, `google$${randomBytes(32).toString("hex")}`, input.name.trim() || email, input.subject],
+  );
+  return created.rows[0];
 }
 
 export async function revokeAllSessions(userId: string): Promise<void> {

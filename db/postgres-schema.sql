@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS app_users (
   city TEXT,
   state CHAR(2),
   avatar_data_url TEXT,
+  google_subject TEXT UNIQUE,
   email_verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
