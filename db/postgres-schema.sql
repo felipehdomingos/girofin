@@ -6,6 +6,11 @@ CREATE TABLE IF NOT EXISTS app_users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   name TEXT NOT NULL,
+  phone TEXT,
+  birth_date DATE,
+  city TEXT,
+  state CHAR(2),
+  avatar_data_url TEXT,
   email_verified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -17,6 +22,21 @@ CREATE TABLE IF NOT EXISTS app_sessions (
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS app_refresh_tokens (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+  family_id UUID NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  replaced_by_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS app_refresh_user_idx ON app_refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS app_refresh_family_idx ON app_refresh_tokens(family_id);
 
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
   id UUID PRIMARY KEY,

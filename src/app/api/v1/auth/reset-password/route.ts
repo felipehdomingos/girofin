@@ -2,23 +2,19 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { resetPassword } from "@/lib/auth-db";
+import { apiError } from "@/lib/api-response";
 
-const schema = z.object({
-  token: z.string().min(20).max(300),
-  password: z.string().min(10).max(200),
-});
+const schema = z.object({ token: z.string().min(20).max(300), password: z.string().min(10).max(200) });
 
 export async function POST(request: Request) {
   try {
     const body = schema.parse(await request.json());
     const ok = await resetPassword(body.token, body.password);
-    if (!ok) return NextResponse.json({ error: "Link inválido ou expirado." }, { status: 400 });
-    return NextResponse.json({ message: "Senha redefinida. Faça login novamente." });
+    if (!ok) return apiError(400, "INVALID_RESET_TOKEN", "O link de recuperacao expirou ou ja foi utilizado.");
+    return NextResponse.json({ message: "Senha redefinida. Entre novamente." });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: "Token ou senha inválidos." }, { status: 400 });
-    }
+    if (error instanceof z.ZodError) return apiError(400, "INVALID_RESET_INPUT", "Envie um token valido e uma senha com pelo menos 10 caracteres.");
     console.error("[auth/reset-password]", error);
-    return NextResponse.json({ error: "Serviço de autenticação indisponível." }, { status: 503 });
+    return apiError(503, "AUTH_SERVICE_UNAVAILABLE", "Nao foi possivel redefinir sua senha agora. Tente novamente em instantes.");
   }
 }

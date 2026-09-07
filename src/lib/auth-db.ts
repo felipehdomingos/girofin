@@ -12,6 +12,8 @@ import { Pool } from "pg";
 
 const scrypt = promisify(scryptCallback);
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+const ACCESS_TOKEN_TTL_SECONDS = 60 * 15;
+const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const RESET_TTL_SECONDS = 60 * 60;
 
 let pool: Pool | null = null;
@@ -48,6 +50,11 @@ export async function ensureAuthSchema(): Promise<void> {
           email_verified_at TIMESTAMPTZ,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS birth_date DATE;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS city TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS state CHAR(2);
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT;
         CREATE TABLE IF NOT EXISTS app_sessions (
           id UUID PRIMARY KEY,
           user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -56,6 +63,19 @@ export async function ensureAuthSchema(): Promise<void> {
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         );
         CREATE INDEX IF NOT EXISTS app_sessions_user_idx ON app_sessions(user_id);
+        CREATE TABLE IF NOT EXISTS app_refresh_tokens (
+          id UUID PRIMARY KEY,
+          user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+          family_id UUID NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          expires_at TIMESTAMPTZ NOT NULL,
+          revoked_at TIMESTAMPTZ,
+          replaced_by_hash TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          last_used_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS app_refresh_user_idx ON app_refresh_tokens(user_id);
+        CREATE INDEX IF NOT EXISTS app_refresh_family_idx ON app_refresh_tokens(family_id);
         CREATE TABLE IF NOT EXISTS password_reset_tokens (
           id UUID PRIMARY KEY,
           user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -100,6 +120,11 @@ export interface AuthUser {
   email: string;
   name: string;
   emailVerified: boolean;
+  phone?: string | null;
+  birthDate?: string | null;
+  city?: string | null;
+  state?: string | null;
+  avatarDataUrl?: string | null;
 }
 
 export async function registerUser(input: {
@@ -160,7 +185,9 @@ export async function getUserBySession(token: string): Promise<AuthUser | null> 
   if (!authConfigured() || !token) return null;
   await ensureAuthSchema();
   const result = await getPool().query<AuthUser>(
-    `SELECT u.id, u.email, u.name, (u.email_verified_at IS NOT NULL) AS "emailVerified"
+    `SELECT u.id, u.email, u.name, (u.email_verified_at IS NOT NULL) AS "emailVerified",
+            u.phone, u.birth_date AS "birthDate", u.city, u.state,
+            u.avatar_data_url AS "avatarDataUrl"
        FROM app_sessions s
        JOIN app_users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.expires_at > now()`,
@@ -173,6 +200,164 @@ export async function deleteSession(token: string): Promise<void> {
   if (!authConfigured() || !token) return;
   await ensureAuthSchema();
   await getPool().query(`DELETE FROM app_sessions WHERE token_hash = $1`, [digest(token)]);
+}
+
+export async function revokeAllSessions(userId: string): Promise<void> {
+  if (!authConfigured() || !userId) return;
+  await ensureAuthSchema();
+  await getPool().query(`DELETE FROM app_sessions WHERE user_id = $1`, [userId]);
+  await getPool().query(
+    `UPDATE app_refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE user_id = $1`,
+    [userId],
+  );
+}
+
+export async function updateUserProfile(input: {
+  userId: string;
+  name: string;
+  phone: string | null;
+  birthDate: string | null;
+  city: string | null;
+  state: string | null;
+  avatarDataUrl: string | null;
+}): Promise<AuthUser> {
+  await ensureAuthSchema();
+  const result = await getPool().query<AuthUser>(
+    `UPDATE app_users
+        SET name = $1, phone = $2, birth_date = $3, city = $4, state = $5,
+            avatar_data_url = $6
+      WHERE id = $7
+      RETURNING id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified",
+                phone, birth_date AS "birthDate", city, state,
+                avatar_data_url AS "avatarDataUrl"`,
+    [input.name, input.phone, input.birthDate, input.city, input.state, input.avatarDataUrl, input.userId],
+  );
+  if (!result.rows[0]) throw new Error("USER_NOT_FOUND");
+  return result.rows[0];
+}
+
+export async function getUserByAccessToken(token: string): Promise<AuthUser | null> {
+  if (!authConfigured() || !token) return null;
+  await ensureAuthSchema();
+  const result = await getPool().query<AuthUser>(
+    `SELECT u.id, u.email, u.name, (u.email_verified_at IS NOT NULL) AS "emailVerified",
+            u.phone, u.birth_date AS "birthDate", u.city, u.state,
+            u.avatar_data_url AS "avatarDataUrl"
+       FROM app_sessions s JOIN app_users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.expires_at > now()`,
+    [digest(token)],
+  );
+  return result.rows[0] ?? null;
+}
+
+export interface MobileSession {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  refreshExpiresIn: number;
+}
+
+async function issueMobileTokens(
+  client: { query: (sql: string, values?: unknown[]) => Promise<unknown> },
+  userId: string,
+  familyId: string,
+): Promise<MobileSession> {
+  const accessToken = randomBytes(32).toString("base64url");
+  const refreshToken = randomBytes(48).toString("base64url");
+  await client.query(
+    `INSERT INTO app_sessions (id, user_id, token_hash, expires_at)
+     VALUES ($1, $2, $3, now() + ($4 * interval '1 second'))`,
+    [randomUUID(), userId, digest(accessToken), ACCESS_TOKEN_TTL_SECONDS],
+  );
+  await client.query(
+    `INSERT INTO app_refresh_tokens (id, user_id, family_id, token_hash, expires_at)
+     VALUES ($1, $2, $3, $4, now() + ($5 * interval '1 second'))`,
+    [randomUUID(), userId, familyId, digest(refreshToken), REFRESH_TOKEN_TTL_SECONDS],
+  );
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+    refreshExpiresIn: REFRESH_TOKEN_TTL_SECONDS,
+  };
+}
+
+export async function createMobileSession(userId: string): Promise<MobileSession> {
+  await ensureAuthSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const session = await issueMobileTokens(client, userId, randomUUID());
+    await client.query("COMMIT");
+    return session;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function rotateMobileSession(refreshToken: string): Promise<MobileSession | null> {
+  if (!refreshToken) return null;
+  await ensureAuthSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query<{
+      id: string;
+      user_id: string;
+      family_id: string;
+      token_hash: string;
+      revoked_at: Date | null;
+      expires_at: Date;
+    }>(
+      `SELECT id, user_id, family_id, token_hash, revoked_at, expires_at
+         FROM app_refresh_tokens WHERE token_hash = $1 FOR UPDATE`,
+      [digest(refreshToken)],
+    );
+    const token = result.rows[0];
+    if (!token) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const invalid = token.revoked_at || token.expires_at.getTime() <= Date.now();
+    if (invalid) {
+      // Replay de um refresh token revogado invalida toda a família.
+      if (token.revoked_at) {
+        await client.query(
+          `UPDATE app_refresh_tokens SET revoked_at = COALESCE(revoked_at, now())
+             WHERE family_id = $1`,
+          [token.family_id],
+        );
+      }
+      await client.query("COMMIT");
+      return null;
+    }
+    const next = await issueMobileTokens(client, token.user_id, token.family_id);
+    await client.query(
+      `UPDATE app_refresh_tokens
+          SET revoked_at = now(), replaced_by_hash = $1, last_used_at = now()
+        WHERE id = $2`,
+      [digest(next.refreshToken), token.id],
+    );
+    await client.query("COMMIT");
+    return next;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function revokeMobileRefreshToken(refreshToken: string): Promise<void> {
+  if (!refreshToken) return;
+  await ensureAuthSchema();
+  await getPool().query(
+    `UPDATE app_refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE token_hash = $1`,
+    [digest(refreshToken)],
+  );
 }
 
 export async function createPasswordReset(
@@ -233,3 +418,5 @@ export function authCookieName(): string {
 }
 
 export const AUTH_SESSION_TTL_SECONDS = SESSION_TTL_SECONDS;
+export const ACCESS_TOKEN_TTL = ACCESS_TOKEN_TTL_SECONDS;
+export const REFRESH_TOKEN_TTL = REFRESH_TOKEN_TTL_SECONDS;

@@ -10,7 +10,7 @@ export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await currentUser();
-  if (authConfigured() && !user) {
+  if ((authConfigured() || process.env.NODE_ENV === "production") && !user) {
     redirect("/login");
   }
 

@@ -21,7 +21,17 @@ decis?es, bloqueios e pr?ximos passos. Os registros individuais ficam em
 | UX/UI | agente UX/UI | `docs/agents/ux-ui.md` | Em andamento |
 | Documenta??o | agente documentador | `docs/agents/documentation.md` | Conclu?do |
 | Desenvolvimento | agente dev | `docs/agents/development.md` | Concluído |
+| Backend | agente dev backend | `docs/agents/backend-development.md` | Pronto |
 | QA | agente QA | `docs/agents/qa.md` | Em andamento |
+
+## Backend
+
+- Ação: criado o papel de Dev Backend em `docs/agents/backend-development.md`.
+- Escopo: APIs versionadas para web/mobile, autenticação, refresh token,
+  autorização, PostgreSQL multiusuário, OpenAPI, Postman e testes de segurança.
+- Bloqueios atuais: o projeto ainda não implementa refresh token nem login
+  social Google; ambos exigem decisão de arquitetura/configuração antes da
+  implementação.
 
 ## Regras de atualiza??o
 

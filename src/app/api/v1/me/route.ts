@@ -1,9 +1,8 @@
-import { NextResponse } from "next/server";
+import { currentApiUser, currentUser } from "@/lib/auth-http";
+import { apiError, apiSuccess } from "@/lib/api-response";
 
-import { currentUser } from "@/lib/auth-http";
-
-export async function GET() {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-  return NextResponse.json({ user });
+export async function GET(request: Request) {
+  const user = (await currentApiUser(request)) ?? (await currentUser());
+  if (!user) return apiError(401, "UNAUTHENTICATED", "Sua sessao expirou. Entre novamente.");
+  return apiSuccess({ user });
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Landmark, Building2, CreditCard, Tags, SlidersHorizontal } from "lucide-react";
+import { Landmark, Building2, CreditCard, Tags, SlidersHorizontal, UserRound } from "lucide-react";
 
 import { AccountManager } from "./account-manager";
 import { CategoryManager } from "./category-manager";
 import { ThemeToggle } from "./theme-toggle";
+import { ProfileForm } from "./profile-form";
 import type { Bank } from "@/lib/banks";
 import type {
   AccountWithBalance,
@@ -28,6 +29,7 @@ import type {
 
 const ABAS = [
   { id: "geral", label: "Geral", icon: SlidersHorizontal },
+  { id: "perfil", label: "Perfil", icon: UserRound },
   { id: "contas", label: "Contas", icon: Landmark },
   { id: "cartoes", label: "Cartões", icon: CreditCard },
   { id: "empresas", label: "Empresas", icon: Building2 },
@@ -46,6 +48,7 @@ export function SettingsTabs({
   nextAccountColor,
   nextSourceColor,
   nextCategoryColor,
+  user,
 }: {
   accounts: AccountWithBalance[];
   banks: Bank[];
@@ -56,6 +59,7 @@ export function SettingsTabs({
   nextAccountColor: string;
   nextSourceColor: string;
   nextCategoryColor: string;
+  user: { name: string; email: string; phone?: string | null; birthDate?: string | null; city?: string | null; state?: string | null; avatarDataUrl?: string | null } | null;
 }) {
   const [aba, setAba] = useState<AbaId>("contas");
 
@@ -101,6 +105,8 @@ export function SettingsTabs({
           nextSourceColor={nextSourceColor}
         />
       ) : null}
+
+      {aba === "perfil" && user ? <ProfileForm profile={user} /> : null}
 
       {aba === "geral" ? (
         <section className="glass max-w-2xl p-2xl" aria-labelledby="config-geral">

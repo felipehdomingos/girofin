@@ -3,6 +3,7 @@ import { getBanks } from "@/lib/banks";
 import { PageHeader } from "@/components/ui";
 import { currentMonth } from "@/lib/dates";
 import { VIZ_PALETTE } from "@/lib/palette";
+import { currentUser } from "@/lib/auth-http";
 import {
   getMonthSummary,
   listAccountsWithBalance,
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
  * Tudo que se cadastra uma vez e se usa o resto do tempo mora aqui.
  */
 export default async function ConfiguracoesPage() {
+  const user = await currentUser();
   const month = currentMonth();
   const accounts = listAccountsWithBalance(month);
   const incomeSources = listIncomeSources();
@@ -47,6 +49,7 @@ export default async function ConfiguracoesPage() {
         nextAccountColor={VIZ_PALETTE[accounts.length % VIZ_PALETTE.length]}
         nextSourceColor={VIZ_PALETTE[incomeSources.length % VIZ_PALETTE.length]}
         nextCategoryColor={VIZ_PALETTE[categories.length % VIZ_PALETTE.length]}
+        user={user}
       />
     </>
   );

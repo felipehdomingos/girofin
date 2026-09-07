@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { learnFromCorrection, parseBulk, reinforce } from "./categorize";
 import { addMonthsToDate, today } from "./dates";
 import * as repo from "./repo";
+import { currentUserId } from "./auth-http";
+import { updateUserProfile } from "./auth-db";
 import {
   accountSchema,
   billSchema,
@@ -36,6 +38,49 @@ function revalidateFinance(): void {
   revalidatePath("/economia");
   revalidatePath("/investimentos");
   revalidatePath("/carteiras");
+}
+
+export async function updateProfileAction(formData: FormData): Promise<ActionResult> {
+  const userId = await currentUserId();
+  if (!userId) return { ok: false, error: "Faça login para atualizar seu perfil." };
+
+  const name = String(formData.get("name") ?? "").trim();
+  const phone = String(formData.get("phone") ?? "").trim();
+  const birthDate = String(formData.get("birthDate") ?? "").trim();
+  const city = String(formData.get("city") ?? "").trim();
+  const state = String(formData.get("state") ?? "").trim().toUpperCase();
+  const avatarDataUrl = String(formData.get("avatarDataUrl") ?? "").trim();
+
+  if (name.length < 2 || name.length > 80) {
+    return { ok: false, error: "Informe um nome entre 2 e 80 caracteres." };
+  }
+  if (phone.length > 30 || city.length > 80 || !/^[A-Z]{0,2}$/.test(state)) {
+    return { ok: false, error: "Confira telefone, cidade e UF antes de salvar." };
+  }
+  if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    return { ok: false, error: "Informe uma data de nascimento válida." };
+  }
+  if (avatarDataUrl && (!/^data:image\/(jpeg|png|webp);base64,/i.test(avatarDataUrl) || avatarDataUrl.length > 2_800_000)) {
+    return { ok: false, error: "A foto deve ser JPG, PNG ou WebP e ter no máximo 2 MB." };
+  }
+
+  try {
+    await updateUserProfile({
+      userId,
+      name,
+      phone: phone || null,
+      birthDate: birthDate || null,
+      city: city || null,
+      state: state || null,
+      avatarDataUrl: avatarDataUrl || null,
+    });
+    revalidatePath("/configuracoes");
+    revalidatePath("/");
+    return { ok: true, message: "Perfil atualizado com sucesso." };
+  } catch (error) {
+    console.error("[profile/update]", error);
+    return { ok: false, error: "Não foi possível salvar o perfil agora. Tente novamente." };
+  }
 }
 
 // -------------------------------------------------------------- lançamentos

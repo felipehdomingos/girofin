@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "GiroFin API v1",
+    "description": "Coleção para testar a API web/mobile em staging e produção. Não contém credenciais reais.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://girofin-staging.example.com/api/v1" },
+    { "key": "email", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "name", "value": "Usuário GiroFin" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "resetToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register mobile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"{{name}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"client\": \"mobile\"\n}" },
+            "url": "{{baseUrl}}/auth/register"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const json = pm.response.json();", "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);", "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);"] } }]
+        },
+        {
+          "name": "Login mobile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"client\": \"mobile\"\n}" },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const json = pm.response.json();", "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);", "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);", "pm.test('login mobile retorna tokens', () => pm.expect(json.accessToken).to.be.a('string'));"] } }]
+        },
+        {
+          "name": "Current user",
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }], "url": "{{baseUrl}}/me" }
+        },
+        {
+          "name": "Refresh token (rotation)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh"
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["const json = pm.response.json();", "if (json.accessToken) pm.collectionVariables.set('accessToken', json.accessToken);", "if (json.refreshToken) pm.collectionVariables.set('refreshToken', json.refreshToken);", "pm.test('refresh retorna novo refresh token', () => pm.expect(json.refreshToken).to.be.a('string'));"] } }]
+        },
+        {
+          "name": "Logout mobile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\"\n}" },
+            "url": "{{baseUrl}}/auth/forgot-password"
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": "{{baseUrl}}/auth/reset-password"
+          }
+        }
+      ]
+    }
+  ]
+}

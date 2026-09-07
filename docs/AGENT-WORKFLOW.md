@@ -3,7 +3,7 @@
 O desenvolvimento do GiroFin segue uma cadeia de responsabilidade clara:
 
 ```text
-UX/UI -> Dev -> QA -> Documentação -> staging
+UX/UI -> Dev Backend/Frontend -> QA -> Documentação -> staging
 ```
 
 ## UX/UI
@@ -25,6 +25,19 @@ Implementa o que foi definido pelo UX/UI na branch `develop`:
 - preserva os padrões existentes do projeto;
 - adiciona ou atualiza testes quando o comportamento muda;
 - executa typecheck, build e testes aplicáveis;
+- não publica diretamente em `Master`.
+
+## Dev Backend
+
+Trabalha em conjunto com Dev na camada de servidor e na API pública:
+
+- define contratos versionados e exemplos para clientes web e mobile;
+- retorna mensagens claras e acionaveis para o front, com codigos de erro estaveis;
+- protege cada rota com autenticação e autorização explícitas;
+- implementa sessões, access tokens e refresh tokens com rotação e revogação;
+- mantém OpenAPI e collection Postman sincronizadas;
+- garante isolamento por usuário no PostgreSQL;
+- testa expiração, replay, rate limiting, erros e falhas de dependências;
 - não publica diretamente em `Master`.
 
 ## QA

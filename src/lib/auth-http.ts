@@ -9,6 +9,8 @@ import {
   createSession,
   deleteSession,
   getUserBySession,
+  getUserByAccessToken,
+  revokeAllSessions,
   type AuthUser,
 } from "./auth-db";
 
@@ -29,13 +31,23 @@ export async function setAuthSession(userId: string): Promise<void> {
 export async function clearAuthSession(): Promise<void> {
   const store = await cookies();
   const token = store.get(authCookieName())?.value;
-  if (token) await deleteSession(token);
+  if (token) {
+    const user = await getUserBySession(token);
+    if (user) await revokeAllSessions(user.id);
+    else await deleteSession(token);
+  }
   store.delete(authCookieName());
 }
 
 export async function currentUser(): Promise<AuthUser | null> {
   const store = await cookies();
   return getUserBySession(store.get(authCookieName())?.value ?? "");
+}
+
+export async function currentApiUser(request: Request): Promise<AuthUser | null> {
+  const authorization = request.headers.get("authorization");
+  if (!authorization?.startsWith("Bearer ")) return null;
+  return getUserByAccessToken(authorization.slice(7).trim());
 }
 
 export async function currentUserId(): Promise<string | null> {
