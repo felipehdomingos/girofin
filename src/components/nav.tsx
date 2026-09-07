@@ -62,7 +62,9 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
           <div className="mt-lg flex items-center justify-between gap-md">
             <div>
               <p className="text-sm font-semibold tracking-tight">Controle Financeiro</p>
-              <p className="mt-xs text-xs text-muted-foreground">Seus dados, nesta máquina</p>
+              <p className="mt-xs text-xs text-muted-foreground">
+                Organize hoje. Viva melhor.
+              </p>
             </div>
             <ThemeToggle />
           </div>
