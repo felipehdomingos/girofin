@@ -120,6 +120,15 @@ body[data-theme="light"] {
     display: none;
   }
 
+  .auth-shell {
+    background: radial-gradient(circle at 50% 0, rgba(79, 116, 232, 0.12), transparent 45%), var(--color-background);
+  }
+
+  .auth-wrap { max-width: 460px; }
+  .auth-brand { display: flex; justify-content: center; margin-bottom: 24px; }
+  .auth-card h1 { font-size: 28px; margin-bottom: 8px; }
+  .auth-card > p.mt-sm { margin-bottom: 25px; }
+
   /* Todo número de dinheiro alinha dígito com dígito. */
   .tabular {
     font-variant-numeric: tabular-nums;

@@ -26,9 +26,10 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
 
   if (mode === "reset" && !token) {
     return (
-      <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
-      <section className="glass w-full max-w-md p-2xl" aria-labelledby="reset-invalid">
-          <div className="flex justify-center"><BrandLogo /></div>
+      <main className="auth-shell flex min-h-dvh items-center justify-center px-xl py-3xl">
+      <div className="auth-wrap w-full">
+        <div className="auth-brand"><BrandLogo /></div>
+      <section className="glass auth-card w-full p-2xl" aria-labelledby="reset-invalid">
           <h1 id="reset-invalid" className="text-2xl font-semibold">
             Link inválido
           </h1>
@@ -42,6 +43,7 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
             Solicitar novo link
           </Link>
         </section>
+      </div>
       </main>
     );
   }
@@ -73,6 +75,10 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
         body: JSON.stringify(body),
       });
       const data = (await response.json()) as { error?: string; message?: string };
+      const structuredError = (data as unknown as { error?: { message?: string } }).error;
+      if (!response.ok && structuredError && typeof structuredError === "object") {
+        throw new Error(structuredError.message ?? "Nao foi possivel concluir.");
+      }
       if (!response.ok) throw new Error(data.error ?? "Não foi possível concluir.");
       if (mode === "login" || mode === "register") router.push("/");
       else setMessage(data.message ?? "Operação concluída.");
@@ -84,9 +90,10 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
   }
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
-      <section className="glass w-full max-w-md p-2xl">
-        <div className="flex justify-center"><BrandLogo /></div>
+    <main className="auth-shell flex min-h-dvh items-center justify-center px-xl py-3xl">
+      <div className="auth-wrap w-full">
+        <div className="auth-brand"><BrandLogo /></div>
+      <section className="glass auth-card w-full p-2xl">
         <p className="mt-lg text-xs font-semibold uppercase tracking-[0.18em] text-accent">
           Controle Financeiro
         </p>
@@ -181,6 +188,7 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
           ) : null}
         </nav>
       </section>
+      </div>
     </main>
   );
 }
