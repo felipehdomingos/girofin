@@ -4,12 +4,15 @@ import { cookies } from "next/headers";
 
 import {
   authCookieName,
+  authConfigured,
   AUTH_SESSION_TTL_SECONDS,
   createSession,
   deleteSession,
   getUserBySession,
   type AuthUser,
 } from "./auth-db";
+
+export { authConfigured };
 
 export async function setAuthSession(userId: string): Promise<void> {
   const token = await createSession(userId);
@@ -33,4 +36,17 @@ export async function clearAuthSession(): Promise<void> {
 export async function currentUser(): Promise<AuthUser | null> {
   const store = await cookies();
   return getUserBySession(store.get(authCookieName())?.value ?? "");
+}
+
+export async function currentUserId(): Promise<string | null> {
+  const user = await currentUser();
+  return user?.id ?? null;
+}
+
+export async function requireCurrentUserId(): Promise<string> {
+  const userId = await currentUserId();
+  if (!userId) {
+    throw new Error("Sessão de usuário ausente para acesso ao repositório financeiro.");
+  }
+  return userId;
 }
