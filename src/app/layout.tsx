@@ -49,7 +49,11 @@ export default function RootLayout({
   // seção vazia é ruído. Leitura barata: uma consulta de contas por navegação.
   const hasCards = listAccounts().some((a) => a.kind === "CARTAO");
   return (
-    <html lang="pt-BR" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html
+      lang="pt-BR"
+      className={`${plexSans.variable} ${plexMono.variable}`}
+      data-theme="dark"
+    >
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
         {/* Primeiro item do DOM: quem navega por teclado pula a navegação
             inteira em vez de tabular por ela em toda página. */}

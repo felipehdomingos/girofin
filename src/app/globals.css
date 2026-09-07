@@ -43,13 +43,40 @@
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
 }
 
+:root[data-theme="light"] {
+  --color-primary: #1d4ed8;
+  --color-on-primary: #ffffff;
+  --color-secondary: #2563eb;
+  --color-on-secondary: #ffffff;
+  --color-accent: #047857;
+  --color-on-accent: #ffffff;
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+  --color-muted: #eef2ff;
+  --color-muted-foreground: #475569;
+  --color-border: rgba(15, 23, 42, 0.12);
+  --color-destructive: #b91c1c;
+  --color-on-destructive: #ffffff;
+  --color-ring: #1d4ed8;
+  --color-pos-text: #047857;
+  --color-neg-text: #b91c1c;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.1);
+  --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
+}
+
 @layer base {
   body {
     background: var(--color-background);
     color: var(--color-foreground);
-    /* Anti-pattern do MASTER.md: "pure white backgrounds". O app é dark-only
-       por escolha; não há tema claro pela metade herdando do sistema. */
     color-scheme: dark;
+  }
+
+  :root[data-theme="light"] body {
+    color-scheme: light;
   }
 
   /* Foco visível em tudo que recebe teclado. A checklist proíbe
@@ -58,6 +85,34 @@
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
     border-radius: 4px;
+  }
+
+  .brand-logo {
+    display: block;
+    width: 100%;
+    max-width: 144px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #000;
+  }
+
+  .brand-logo__image {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+  }
+
+  .brand-logo__image--light {
+    display: none;
+  }
+
+  :root[data-theme="light"] .brand-logo__image--light {
+    display: block;
+  }
+
+  :root[data-theme="light"] .brand-logo__image--dark {
+    display: none;
   }
 
   /* Todo número de dinheiro alinha dígito com dígito. */
