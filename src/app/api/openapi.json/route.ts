@@ -3,12 +3,12 @@ import { NextResponse } from "next/server";
 const document = {
   openapi: "3.0.3",
   info: {
-    title: "GiroFin API",
+    title: "Controle Financeiro API",
     version: "1.0.0",
-    description: "API de identidade e dados financeiros do GiroFin.",
+    description: "API de identidade e dados financeiros do Controle Financeiro.",
   },
   servers: [{ url: "/api/v1" }],
-  tags: [{ name: "Auth", description: "Cadastro e sess?es" }],
+  tags: [{ name: "Auth", description: "Cadastro e sessões" }],
   paths: {
     "/auth/register": {
       post: {
@@ -30,96 +30,45 @@ const document = {
             },
           },
         },
-        responses: { "201": { description: "Conta criada" }, "400": { description: "Dados inv?lidos" }, "409": { description: "E-mail j? cadastrado" } },
+        responses: { "201": { description: "Conta criada" }, "400": { description: "Dados inválidos" } },
       },
     },
     "/auth/login": {
       post: {
         tags: ["Auth"],
-        summary: "Inicia uma sess?o",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email", "password"],
-                properties: {
-                  email: { type: "string", format: "email" },
-                  password: { type: "string", minLength: 1 },
-                },
-              },
-            },
-          },
-        },
+        summary: "Inicia uma sessão",
         responses: {
-          "200": { description: "Sess?o criada em cookie HttpOnly" },
-          "400": { description: "Dados inv?lidos" },
-          "401": { description: "Credenciais inv?lidas" },
+          "200": { description: "Sessão criada em cookie HttpOnly" },
+          "401": { description: "Credenciais inválidas" },
         },
       },
     },
     "/auth/logout": {
       post: {
         tags: ["Auth"],
-        summary: "Encerra a sess?o",
-        responses: { "200": { description: "Sess?o encerrada" } },
+        summary: "Encerra a sessão",
+        responses: { "200": { description: "Sessão encerrada" } },
       },
     },
     "/auth/forgot-password": {
       post: {
         tags: ["Auth"],
-        summary: "Solicita recupera??o de senha",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["email"],
-                properties: {
-                  email: { type: "string", format: "email" },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          "200": { description: "Resposta gen?rica anti-enumera??o" },
-          "400": { description: "E-mail inv?lido" },
-        },
+        summary: "Solicita recuperação de senha",
+        responses: { "200": { description: "Resposta genérica anti-enumeração" } },
       },
     },
     "/auth/reset-password": {
       post: {
         tags: ["Auth"],
         summary: "Define uma nova senha",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["token", "password"],
-                properties: {
-                  token: { type: "string", minLength: 20 },
-                  password: { type: "string", minLength: 10 },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          "200": { description: "Senha redefinida" },
-          "400": { description: "Token inv?lido ou expirado" },
-        },
+        responses: { "200": { description: "Senha redefinida" }, "400": { description: "Token inválido" } },
       },
     },
     "/me": {
       get: {
         tags: ["Auth"],
-        summary: "Retorna o usu?rio autenticado",
-        responses: { "200": { description: "Usu?rio atual" }, "401": { description: "N?o autenticado" } },
+        summary: "Retorna o usuário autenticado",
+        responses: { "200": { description: "Usuário atual" }, "401": { description: "Não autenticado" } },
       },
     },
   },

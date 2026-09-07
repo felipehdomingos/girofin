@@ -4,8 +4,6 @@ import { z } from "zod";
 import { createPasswordReset } from "@/lib/auth-db";
 import { sendPasswordResetEmail } from "@/lib/auth-email";
 
-export const runtime = "nodejs";
-
 const schema = z.object({ email: z.string().trim().email().max(254) });
 const genericResponse = {
   message: "Se o e-mail estiver cadastrado, você receberá instruções para redefinir a senha.",
@@ -21,7 +19,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(genericResponse);
   } catch (error) {
-    if (error instanceof z.ZodError || error instanceof SyntaxError) {
+    if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Informe um e-mail válido." }, { status: 400 });
     }
     console.error("[auth/forgot-password]", error);

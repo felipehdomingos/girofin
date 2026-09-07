@@ -44,7 +44,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" className={`${plexSans.variable} ${plexMono.variable}`}>
+    <html
+      lang="pt-BR"
+      className={`${plexSans.variable} ${plexMono.variable}`}
+      data-theme="dark"
+    >
       <body className="min-h-dvh bg-background font-sans text-foreground antialiased">
         {children}
       </body>

@@ -32,9 +32,6 @@ function getPool(): Pool {
 }
 
 export function authConfigured(): boolean {
-  // A partially configured deployment must fail closed instead of falling
-  // back to the shared local SQLite database. Both settings are required for
-  // the identity layer to be active in Azure or any other hosted environment.
   return Boolean(process.env.DATABASE_URL && process.env.AUTH_SECRET);
 }
 
@@ -232,9 +229,7 @@ export async function resetPassword(token: string, password: string): Promise<bo
 }
 
 export function authCookieName(): string {
-  return process.env.NODE_ENV === "production"
-    ? "__Host-girofin_session"
-    : "girofin_session";
+  return process.env.NODE_ENV === "production" ? "__Host-finance_session" : "finance_session";
 }
 
 export const AUTH_SESSION_TTL_SECONDS = SESSION_TTL_SECONDS;

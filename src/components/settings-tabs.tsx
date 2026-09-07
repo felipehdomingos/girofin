@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Landmark, Building2, CreditCard, Tags } from "lucide-react";
+import { Landmark, Building2, CreditCard, Tags, SlidersHorizontal } from "lucide-react";
 
 import { AccountManager } from "./account-manager";
 import { CategoryManager } from "./category-manager";
+import { ThemeToggle } from "./theme-toggle";
 import type { Bank } from "@/lib/banks";
 import type {
   AccountWithBalance,
@@ -26,6 +27,7 @@ import type {
  */
 
 const ABAS = [
+  { id: "geral", label: "Geral", icon: SlidersHorizontal },
   { id: "contas", label: "Contas", icon: Landmark },
   { id: "cartoes", label: "Cartões", icon: CreditCard },
   { id: "empresas", label: "Empresas", icon: Building2 },
@@ -73,8 +75,6 @@ export function SettingsTabs({
               key={id}
               type="button"
               role="tab"
-              id={`tab-${id}`}
-              aria-controls="panel-configuracoes"
               aria-selected={ativa}
               onClick={() => setAba(id)}
               className={`flex shrink-0 cursor-pointer items-center gap-md border-b-2 px-lg py-md text-sm transition-colors duration-200 ${
@@ -90,56 +90,65 @@ export function SettingsTabs({
         })}
       </div>
 
-      <div
-        role="tabpanel"
-        id="panel-configuracoes"
-        aria-labelledby={`tab-${aba}`}
-        tabIndex={0}
-      >
-        {aba === "contas" ? (
-          <AccountManager
-            show="contas"
-            accounts={accounts}
-            banks={banks}
-            incomeSources={incomeSources}
-            incomeThisMonth={incomeThisMonth}
-            nextAccountColor={nextAccountColor}
-            nextSourceColor={nextSourceColor}
-          />
-        ) : null}
+      {aba === "contas" ? (
+        <AccountManager
+          show="contas"
+          accounts={accounts}
+          banks={banks}
+          incomeSources={incomeSources}
+          incomeThisMonth={incomeThisMonth}
+          nextAccountColor={nextAccountColor}
+          nextSourceColor={nextSourceColor}
+        />
+      ) : null}
 
-        {aba === "cartoes" ? (
-          <AccountManager
-            show="cartoes"
-            accounts={accounts}
-            banks={banks}
-            incomeSources={incomeSources}
-            incomeThisMonth={incomeThisMonth}
-            nextAccountColor={nextAccountColor}
-            nextSourceColor={nextSourceColor}
-          />
-        ) : null}
+      {aba === "geral" ? (
+        <section className="glass max-w-2xl p-2xl" aria-labelledby="config-geral">
+          <div className="flex items-center justify-between gap-xl">
+            <div>
+              <h2 id="config-geral" className="text-base font-semibold">
+                Aparência
+              </h2>
+              <p className="mt-xs text-sm text-muted-foreground">
+                Escolha o tema que combina com você.
+              </p>
+            </div>
+            <ThemeToggle />
+          </div>
+        </section>
+      ) : null}
 
-        {aba === "empresas" ? (
-          <AccountManager
-            show="empresas"
-            accounts={accounts}
-            banks={banks}
-            incomeSources={incomeSources}
-            incomeThisMonth={incomeThisMonth}
-            nextAccountColor={nextAccountColor}
-            nextSourceColor={nextSourceColor}
-          />
-        ) : null}
+      {aba === "cartoes" ? (
+        <AccountManager
+          show="cartoes"
+          accounts={accounts}
+          banks={banks}
+          incomeSources={incomeSources}
+          incomeThisMonth={incomeThisMonth}
+          nextAccountColor={nextAccountColor}
+          nextSourceColor={nextSourceColor}
+        />
+      ) : null}
 
-        {aba === "categorias" ? (
-          <CategoryManager
-            categories={categories}
-            spentByCategory={spentByCategory}
-            nextColor={nextCategoryColor}
-          />
-        ) : null}
-      </div>
+      {aba === "empresas" ? (
+        <AccountManager
+          show="empresas"
+          accounts={accounts}
+          banks={banks}
+          incomeSources={incomeSources}
+          incomeThisMonth={incomeThisMonth}
+          nextAccountColor={nextAccountColor}
+          nextSourceColor={nextSourceColor}
+        />
+      ) : null}
+
+      {aba === "categorias" ? (
+        <CategoryManager
+          categories={categories}
+          spentByCategory={spentByCategory}
+          nextColor={nextCategoryColor}
+        />
+      ) : null}
     </>
   );
 }

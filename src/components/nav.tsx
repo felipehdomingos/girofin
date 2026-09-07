@@ -11,6 +11,8 @@ import {
   CreditCard,
   Settings,
 } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
+import { LogoutButton } from "@/components/logout-button";
 
 /**
  * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
@@ -56,8 +58,15 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
         className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-border bg-muted/40 px-lg py-xl lg:flex"
       >
         <div className="mb-2xl px-md">
-          <p className="text-sm font-semibold tracking-tight">GiroFin</p>
-          <p className="mt-xs text-xs text-muted-foreground">Seus dados, nesta máquina</p>
+          <BrandLogo />
+          <div className="mt-lg flex items-center justify-between gap-md">
+            <div>
+              <p className="text-sm font-semibold tracking-tight">Controle Financeiro</p>
+              <p className="mt-xs text-xs text-muted-foreground">
+                Organize hoje. Viva melhor.
+              </p>
+            </div>
+          </div>
         </div>
 
         <ul className="flex flex-col gap-xs">
@@ -83,6 +92,9 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
             );
           })}
         </ul>
+        <div className="mt-auto border-t border-border pt-lg">
+          <LogoutButton />
+        </div>
       </nav>
 
       {/* ----------------------------------------------------------- mobile */}
