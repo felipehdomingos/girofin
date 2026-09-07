@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/logout-button";
+import { ThemeToggle } from "@/components/theme-toggle";
+
+type NavUser = { name: string; email: string };
 
 /**
  * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
@@ -38,8 +41,15 @@ const BASE = [
 /** Só aparece depois que existe pelo menos um cartão cadastrado. */
 const CARTOES = { href: "/cartoes", label: "Cartões", icon: CreditCard } as const;
 
-export function Nav({ hasCards = false }: { hasCards?: boolean }) {
+export function Nav({ hasCards = false, user }: { hasCards?: boolean; user?: NavUser | null }) {
   const pathname = usePathname();
+  const displayName = user?.name || "Sua conta";
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "GF";
 
   // Cartões entra logo depois de "A pagar", perto do assunto vizinho.
   const ITEMS = hasCards
@@ -59,13 +69,14 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
       >
         <div className="mb-2xl px-md">
           <BrandLogo />
-          <div className="mt-lg flex items-center justify-between gap-md">
+          <div className="mt-lg flex items-start justify-between gap-md">
             <div>
               <p className="text-sm font-semibold tracking-tight">Controle Financeiro</p>
               <p className="mt-xs text-xs text-muted-foreground">
                 Organize hoje. Viva melhor.
               </p>
             </div>
+            <ThemeToggle />
           </div>
         </div>
 
@@ -92,6 +103,15 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
             );
           })}
         </ul>
+        <div className="mt-auto flex items-center gap-md border-t border-border px-md pt-lg">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-on-accent" aria-hidden="true">
+            {initials}
+          </span>
+          <span className="min-w-0">
+            <strong className="block truncate text-xs">{displayName}</strong>
+            <span className="block truncate text-[11px] text-muted-foreground">{user?.email || "Conta pessoal"}</span>
+          </span>
+        </div>
         <div className="mt-auto border-t border-border pt-lg">
           <LogoutButton />
         </div>

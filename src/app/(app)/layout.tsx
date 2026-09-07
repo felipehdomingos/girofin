@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  if (authConfigured() && !(await currentUser())) {
+  const user = await currentUser();
+  if (authConfigured() && !user) {
     redirect("/login");
   }
 
@@ -27,7 +28,7 @@ export default async function AppLayout({
       </a>
 
       <div className="lg:flex">
-        <Nav hasCards={hasCards} />
+        <Nav hasCards={hasCards} user={user} />
         <main
           id="conteudo"
           className="min-w-0 flex-1 px-xl pb-24 pt-xl lg:px-3xl lg:pb-3xl"

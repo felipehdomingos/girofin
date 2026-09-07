@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 
 import { ManualEntry } from "./manual-entry";
@@ -35,6 +36,7 @@ export function EntryDialog({
   variant?: "button" | "fab";
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const router = useRouter();
   const [tab, setTab] = useState<"rapido" | "detalhado">("rapido");
   const [open, setOpen] = useState(false);
 
@@ -45,6 +47,11 @@ export function EntryDialog({
 
   function fechar() {
     dialogRef.current?.close();
+  }
+
+  function handleSaved() {
+    fechar();
+    router.refresh();
   }
 
   // O <dialog> fecha sozinho no Esc, sem passar pelo onClick. Sem escutar
@@ -173,7 +180,7 @@ export function EntryDialog({
                   incomeSources={incomeSources}
                   today={today}
                   bare
-                  onSaved={fechar}
+                  onSaved={handleSaved}
                 />
               ) : (
                 <ManualEntry

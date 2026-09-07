@@ -33,6 +33,7 @@ import {
   listTransactions,
 } from "@/lib/repo";
 import { KIND_LABEL, KIND_TARGET, type CategoryKind } from "@/lib/types";
+import { currentUser } from "@/lib/auth-http";
 
 /**
  * Resumo do mês — a tela que responde "como eu estou?" em cinco segundos.
@@ -44,7 +45,8 @@ import { KIND_LABEL, KIND_TARGET, type CategoryKind } from "@/lib/types";
 /** Lê o SQLite a cada requisição — sem isso o Next congelaria o estado do build. */
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const user = await currentUser();
   const month = currentMonth();
   const summary = getMonthSummary(month);
   const bills = getBillsForMonth(month);
@@ -65,7 +67,7 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Resumo"
+        title={user?.name ? `Olá, ${user.name}` : "Resumo"}
         subtitle={`${formatMonthLong(month)} · dia ${progress.elapsed} de ${progress.total}`}
         actions={
           <EntryDialog
