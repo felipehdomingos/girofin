@@ -4,6 +4,8 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { BrandLogo } from "@/components/brand-logo";
+
 type Mode = "login" | "register" | "forgot" | "reset";
 
 export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
@@ -25,7 +27,8 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
   if (mode === "reset" && !token) {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
-        <section className="glass w-full max-w-md p-2xl" aria-labelledby="reset-invalid">
+      <section className="glass w-full max-w-md p-2xl" aria-labelledby="reset-invalid">
+          <BrandLogo />
           <h1 id="reset-invalid" className="text-2xl font-semibold">
             Link inválido
           </h1>
@@ -83,7 +86,8 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
       <section className="glass w-full max-w-md p-2xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">
+        <BrandLogo />
+        <p className="mt-lg text-xs font-semibold uppercase tracking-[0.18em] text-accent">
           Controle Financeiro
         </p>
         <h1 className="mt-lg text-2xl font-semibold">{copy[0]}</h1>
