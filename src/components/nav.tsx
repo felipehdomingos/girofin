@@ -12,6 +12,7 @@ import {
   Settings,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { LogoutButton } from "@/components/logout-button";
 
 /**
  * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
@@ -91,6 +92,9 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
             );
           })}
         </ul>
+        <div className="mt-auto border-t border-border pt-lg">
+          <LogoutButton />
+        </div>
       </nav>
 
       {/* ----------------------------------------------------------- mobile */}

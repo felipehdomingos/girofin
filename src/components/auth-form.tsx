@@ -22,6 +22,27 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
     reset: ["Nova senha", "Escolha uma senha forte para continuar."],
   }[mode];
 
+  if (mode === "reset" && !token) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-background px-xl py-3xl">
+        <section className="glass w-full max-w-md p-2xl" aria-labelledby="reset-invalid">
+          <h1 id="reset-invalid" className="text-2xl font-semibold">
+            Link inválido
+          </h1>
+          <p className="mt-sm text-sm text-muted-foreground">
+            Esse link de redefinição está ausente ou expirado. Solicite um novo link para continuar.
+          </p>
+          <Link
+            href="/recuperar-senha"
+            className="mt-xl inline-flex min-h-11 items-center rounded-control bg-accent px-xl py-md text-sm font-semibold text-on-accent"
+          >
+            Solicitar novo link
+          </Link>
+        </section>
+      </main>
+    );
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
@@ -73,10 +94,13 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
             <label className="flex flex-col gap-sm text-sm">
               Nome
               <input
+                id="name"
+                name="name"
                 required
                 minLength={2}
                 maxLength={80}
                 value={name}
+                autoComplete="name"
                 onChange={(event) => setName(event.target.value)}
                 className="w-full rounded-control border border-border bg-muted px-lg py-md"
               />
@@ -86,9 +110,12 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
             <label className="flex flex-col gap-sm text-sm">
               E-mail
               <input
+                id="email"
+                name="email"
                 required
                 type="email"
                 value={email}
+                autoComplete="email"
                 onChange={(event) => setEmail(event.target.value)}
                 className="w-full rounded-control border border-border bg-muted px-lg py-md"
               />
@@ -98,11 +125,14 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
             <label className="flex flex-col gap-sm text-sm">
               Senha
               <input
+                id="password"
+                name="password"
                 required
                 type="password"
                 minLength={10}
                 maxLength={200}
                 value={password}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full rounded-control border border-border bg-muted px-lg py-md"
               />
@@ -111,8 +141,16 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
               ) : null}
             </label>
           ) : null}
-          {error ? <p className="rounded-control bg-destructive/10 p-lg text-sm text-neg">{error}</p> : null}
-          {message ? <p className="rounded-control bg-accent/10 p-lg text-sm text-pos">{message}</p> : null}
+          {error ? (
+            <p role="alert" aria-live="assertive" className="rounded-control bg-destructive/10 p-lg text-sm text-neg">
+              {error}
+            </p>
+          ) : null}
+          {message ? (
+            <p role="status" aria-live="polite" className="rounded-control bg-accent/10 p-lg text-sm text-pos">
+              {message}
+            </p>
+          ) : null}
           <button
             disabled={pending}
             className="rounded-control bg-accent px-xl py-md text-sm font-semibold text-on-accent disabled:opacity-50"
