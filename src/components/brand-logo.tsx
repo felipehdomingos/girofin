@@ -5,7 +5,7 @@ export function BrandLogo() {
     <span className="brand-logo" aria-label="GiroFin">
       <Image
         className="brand-logo__image brand-logo__image--light"
-        src="/brand/girofin-light.png"
+        src="/brand/girofin-dark.png"
         alt="GiroFin"
         width={144}
         height={96}
@@ -13,7 +13,7 @@ export function BrandLogo() {
       />
       <Image
         className="brand-logo__image brand-logo__image--dark"
-        src="/brand/girofin-dark.png"
+        src="/brand/girofin-light.png"
         alt=""
         width={144}
         height={96}
