@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Landmark, Building2, CreditCard, Tags } from "lucide-react";
+import { Landmark, Building2, CreditCard, Tags, SlidersHorizontal } from "lucide-react";
 
 import { AccountManager } from "./account-manager";
 import { CategoryManager } from "./category-manager";
+import { ThemeToggle } from "./theme-toggle";
 import type { Bank } from "@/lib/banks";
 import type {
   AccountWithBalance,
@@ -26,6 +27,7 @@ import type {
  */
 
 const ABAS = [
+  { id: "geral", label: "Geral", icon: SlidersHorizontal },
   { id: "contas", label: "Contas", icon: Landmark },
   { id: "cartoes", label: "Cartões", icon: CreditCard },
   { id: "empresas", label: "Empresas", icon: Building2 },
@@ -98,6 +100,22 @@ export function SettingsTabs({
           nextAccountColor={nextAccountColor}
           nextSourceColor={nextSourceColor}
         />
+      ) : null}
+
+      {aba === "geral" ? (
+        <section className="glass max-w-2xl p-2xl" aria-labelledby="config-geral">
+          <div className="flex items-center justify-between gap-xl">
+            <div>
+              <h2 id="config-geral" className="text-base font-semibold">
+                Aparência
+              </h2>
+              <p className="mt-xs text-sm text-muted-foreground">
+                Escolha o tema que combina com você.
+              </p>
+            </div>
+            <ThemeToggle />
+          </div>
+        </section>
       ) : null}
 
       {aba === "cartoes" ? (

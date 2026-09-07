@@ -12,7 +12,6 @@ import {
   Settings,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
-import { ThemeToggle } from "@/components/theme-toggle";
 
 /**
  * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
@@ -66,7 +65,6 @@ export function Nav({ hasCards = false }: { hasCards?: boolean }) {
                 Organize hoje. Viva melhor.
               </p>
             </div>
-            <ThemeToggle />
           </div>
         </div>
 
