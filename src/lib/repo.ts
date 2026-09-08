@@ -1,6 +1,7 @@
-import "server-only";
+﻿import "server-only";
 
-import { getDb, newId } from "./db";
+import { newId } from "./db";
+import { getFinancePgDb, withFinanceTransaction } from "./finance-pg-db";
 import {
   addDays,
   addMonths,
@@ -39,13 +40,9 @@ import type {
 } from "./types";
 
 /**
- * Acesso a dados. Tudo síncrono porque `node:sqlite` é síncrono e o banco é um
- * arquivo local — não há round-trip de rede para justificar async.
- *
- * SQLite guarda boolean como 0/1: as funções `row*` abaixo são o único lugar
- * que traduz isso para `boolean`. Nenhum componente lida com 0/1.
+ * Acesso financeiro multiusuário no PostgreSQL. O escopo do usuário é aplicado
+ * no contexto da conexão e reforçado por Row Level Security no schema.
  */
-
 interface CategoryRow {
   id: string;
   name: string;
@@ -53,11 +50,15 @@ interface CategoryRow {
   color: string;
   icon: string;
   budgetCents: number | null;
-  archived: number;
+  archived: boolean | number;
+}
+
+function isTrue(value: boolean | number): boolean {
+  return value === true || value === 1;
 }
 
 function rowToCategory(r: CategoryRow): Category {
-  return { ...r, archived: r.archived === 1 };
+  return { ...r, archived: isTrue(r.archived) };
 }
 
 interface TxRow {
@@ -82,7 +83,7 @@ function rowToTransaction(r: TxRow): Transaction {
   return { ...r };
 }
 
-/** Colunas do lançamento + o JOIN das entidades exibidas junto. */
+/** Colunas do lanÃ§amento + o JOIN das entidades exibidas junto. */
 const TX_SELECT = `
   t.id, t.type, t.amountCents, t.date, t.description, t.nature, t.notes,
   t.categoryId, t.purchaseId, t.installmentNo, t.installmentTotal,
@@ -103,7 +104,7 @@ type TxJoinRow = TxRow & {
   c_color: string;
   c_icon: string;
   c_budget: number | null;
-  c_archived: number;
+  c_archived: boolean | number;
   a_name: string | null;
   s_name: string | null;
 };
@@ -118,7 +119,7 @@ function rowToTransactionWithCategory(r: TxJoinRow): TransactionWithCategory {
       color: r.c_color,
       icon: r.c_icon,
       budgetCents: r.c_budget,
-      archived: r.c_archived === 1,
+      archived: isTrue(r.c_archived),
     },
     accountName: r.a_name,
     incomeSourceName: r.s_name,
@@ -127,27 +128,27 @@ function rowToTransactionWithCategory(r: TxJoinRow): TransactionWithCategory {
 
 // ---------------------------------------------------------------- categorias
 
-export function listCategories(includeArchived = false): Category[] {
-  const db = getDb();
-  const rows = db
+export async function listCategories(includeArchived = false): Promise<Category[]> {
+  const db = getFinancePgDb();
+  const rows = await db
     .prepare(
       `SELECT id, name, kind, color, icon, budgetCents, archived
          FROM categories
         WHERE (? = 1 OR archived = 0)
         ORDER BY kind, name`,
     )
-    .all(includeArchived ? 1 : 0) as unknown as CategoryRow[];
+    .all<CategoryRow>(includeArchived ? true : false);
   return rows.map(rowToCategory);
 }
 
-export function createCategory(input: {
+export async function createCategory(input: {
   name: string;
   kind: CategoryKind;
   color: string;
   icon: string;
   budgetCents: number | null;
-}): string {
-  const db = getDb();
+}): Promise<string> {
+  const db = getFinancePgDb();
   const id = newId();
   db.prepare(
     `INSERT INTO categories (id, name, kind, color, icon, budgetCents)
@@ -156,20 +157,20 @@ export function createCategory(input: {
   return id;
 }
 
-export function updateCategoryBudget(id: string, budgetCents: number | null): void {
-  getDb()
+export async function updateCategoryBudget(id: string, budgetCents: number | null): Promise<void> {
+  await getFinancePgDb()
     .prepare(`UPDATE categories SET budgetCents = ? WHERE id = ?`)
     .run(budgetCents, id);
 }
 
-// --------------------------------------------------------------- lançamentos
+// --------------------------------------------------------------- lanÃ§amentos
 
-export function listTransactions(opts: {
+export async function listTransactions(opts: {
   month?: string;
   categoryId?: string;
   limit?: number;
-}): TransactionWithCategory[] {
-  const db = getDb();
+}): Promise<TransactionWithCategory[]> {
+  const db = getFinancePgDb();
   const where: string[] = [];
   const params: Array<string | number> = [];
 
@@ -192,23 +193,23 @@ export function listTransactions(opts: {
 
   if (opts.limit) params.push(opts.limit);
 
-  // JOIN em vez de buscar categoria por lançamento: uma consulta em vez de N+1.
-  const rows = db.prepare(sql).all(...params) as unknown as TxJoinRow[];
+  // JOIN em vez de buscar categoria por lanÃ§amento: uma consulta em vez de N+1.
+  const rows = await db.prepare(sql).all<TxJoinRow>(...params);
   return rows.map(rowToTransactionWithCategory);
 }
 
 export interface NewTransaction {
   type: TxType;
   /**
-   * Em FIXO e VISTA: o valor do lançamento.
-   * Em PARCELADO: o valor TOTAL da compra, que será dividido em `installments`.
+   * Em FIXO e VISTA: o valor do lanÃ§amento.
+   * Em PARCELADO: o valor TOTAL da compra, que serÃ¡ dividido em `installments`.
    */
   amountCents: number;
   date: string;
   description: string;
   categoryId: string;
   nature: TxNature;
-  /** Número de parcelas. Só usado quando nature === "PARCELADO". */
+  /** NÃºmero de parcelas. SÃ³ usado quando nature === "PARCELADO". */
   installments?: number;
   accountId: string | null;
   incomeSourceId: string | null;
@@ -226,10 +227,10 @@ const INSERT_TX = `
 /**
  * Quando o dinheiro realmente sai, e qual foi o dia da compra.
  *
- * Em carteira comum, os dois são a mesma data. No cartão de crédito não são: a
- * compra é hoje, o dinheiro sai no vencimento da fatura em que ela caiu. Tratar
- * os dois como a mesma coisa adiantaria o gasto em até dois meses no fluxo de
- * caixa — que é justamente o erro que faz alguém achar que o mês fechou bem.
+ * Em carteira comum, os dois sÃ£o a mesma data. No cartÃ£o de crÃ©dito nÃ£o sÃ£o: a
+ * compra Ã© hoje, o dinheiro sai no vencimento da fatura em que ela caiu. Tratar
+ * os dois como a mesma coisa adiantaria o gasto em atÃ© dois meses no fluxo de
+ * caixa â€” que Ã© justamente o erro que faz alguÃ©m achar que o mÃªs fechou bem.
  */
 function resolveCashOutDate(
   purchaseDate: string,
@@ -250,49 +251,49 @@ function resolveCashOutDate(
   };
 }
 
-export function getAccount(id: string): Account | null {
-  const row = getDb()
+export async function getAccount(id: string): Promise<Account | null> {
+  const row = await getFinancePgDb()
     .prepare(
       `SELECT id, name, kind, openingCents, closingDay, dueDay, last4,
               creditLimitCents, overdraftLimitCents, bankIspb, bankName, logoUrl,
               color, archived
          FROM accounts WHERE id = ?`,
     )
-    .get(id) as unknown as AccountRow | undefined;
-  return row ? { ...row, archived: row.archived === 1 } : null;
+    .get<AccountRow>(id);
+  return row ? { ...row, archived: isTrue(row.archived) } : null;
 }
 
 /**
- * Cria o lançamento. Em PARCELADO, cria UMA LINHA POR PARCELA, uma por mês.
+ * Cria o lanÃ§amento. Em PARCELADO, cria UMA LINHA POR PARCELA, uma por mÃªs.
  *
- * Por que não guardar uma linha só com o total e calcular as parcelas na
- * leitura: porque o fechamento de cada mês precisa somar o que realmente saiu
- * naquele mês. Compra de R$ 1.200 em 6x lançada inteira em setembro faria
- * setembro parecer catastrófico e outubro a fevereiro parecerem livres — e o
- * orçamento por categoria, o alerta de estouro e a sobra média sairiam todos
- * errados. Cada parcela existe como fato do seu próprio mês.
+ * Por que nÃ£o guardar uma linha sÃ³ com o total e calcular as parcelas na
+ * leitura: porque o fechamento de cada mÃªs precisa somar o que realmente saiu
+ * naquele mÃªs. Compra de R$ 1.200 em 6x lanÃ§ada inteira em setembro faria
+ * setembro parecer catastrÃ³fico e outubro a fevereiro parecerem livres â€” e o
+ * orÃ§amento por categoria, o alerta de estouro e a sobra mÃ©dia sairiam todos
+ * errados. Cada parcela existe como fato do seu prÃ³prio mÃªs.
  *
  * Retorna o id da primeira linha criada.
  */
-export function createTransaction(input: NewTransaction): string {
-  const db = getDb();
+export async function createTransaction(input: NewTransaction): Promise<string> {
+  const db = getFinancePgDb();
   const insert = db.prepare(INSERT_TX);
 
   /*
-   * O ciclo da fatura vale para tudo que acontece DENTRO do cartão — inclusive
-   * entrada, que no cartão só existe como estorno. Um estorno lançado no dia 12
-   * abate a fatura em que a compra caiu, não a do mês corrente: sem passar pelo
+   * O ciclo da fatura vale para tudo que acontece DENTRO do cartÃ£o â€” inclusive
+   * entrada, que no cartÃ£o sÃ³ existe como estorno. Um estorno lanÃ§ado no dia 12
+   * abate a fatura em que a compra caiu, nÃ£o a do mÃªs corrente: sem passar pelo
    * ciclo, ele descontava de uma fatura e a compra ficava em outra.
    *
-   * Numa carteira comum, entrada não tem ciclo nenhum — salário não cai em
-   * fatura —, e resolveCashOutDate já devolve a própria data.
+   * Numa carteira comum, entrada nÃ£o tem ciclo nenhum â€” salÃ¡rio nÃ£o cai em
+   * fatura â€”, e resolveCashOutDate jÃ¡ devolve a prÃ³pria data.
    */
-  const account = input.accountId ? getAccount(input.accountId) : null;
+  const account = input.accountId ? await getAccount(input.accountId) : null;
   const { date: firstDate, purchaseDate } = resolveCashOutDate(input.date, account);
 
   if (input.nature !== "PARCELADO") {
     const id = newId();
-    insert.run(
+    await insert.run(
       id,
       input.type,
       input.amountCents,
@@ -307,31 +308,32 @@ export function createTransaction(input: NewTransaction): string {
       input.accountId,
       input.incomeSourceId,
       purchaseDate,
-      // Compra no cartão de crédito é crédito por definição — não faz sentido
-      // deixar o usuário escolher "pix" numa carteira do tipo CARTAO.
+      // Compra no cartÃ£o de crÃ©dito Ã© crÃ©dito por definiÃ§Ã£o â€” nÃ£o faz sentido
+      // deixar o usuÃ¡rio escolher "pix" numa carteira do tipo CARTAO.
       account?.kind === "CARTAO" ? "CREDITO" : input.method,
     );
     return id;
   }
 
   const parts = Math.max(1, Math.floor(input.installments ?? 1));
-  // Divisão que não perde centavo — ver splitCents em money.ts.
+  // DivisÃ£o que nÃ£o perde centavo â€” ver splitCents em money.ts.
   const values = splitCents(input.amountCents, parts);
   const purchaseId = newId();
   let firstId = "";
 
-  // Transação do SQLite: ou todas as parcelas entram, ou nenhuma. Uma compra
-  // gravada pela metade seria pior que uma compra não gravada.
-  db.exec("BEGIN");
-  try {
-    values.forEach((cents, i) => {
+  // TransaÃ§Ã£o do SQLite: ou todas as parcelas entram, ou nenhuma. Uma compra
+  // gravada pela metade seria pior que uma compra nÃ£o gravada.
+  return withFinanceTransaction(async (transactionDb) => {
+    const transactionInsert = transactionDb.prepare(INSERT_TX);
+    try {
+      for (const [i, cents] of values.entries()) {
       const id = newId();
       if (i === 0) firstId = id;
-      insert.run(
+      await transactionInsert.run(
         id,
         input.type,
         cents,
-        // A 1ª parcela cai na fatura resolvida acima; as seguintes, um mês
+        // A 1Âª parcela cai na fatura resolvida acima; as seguintes, um mÃªs
         // depois de cada anterior.
         addMonthsToDate(firstDate, i),
         input.description,
@@ -346,69 +348,63 @@ export function createTransaction(input: NewTransaction): string {
         purchaseDate,
         account?.kind === "CARTAO" ? "CREDITO" : input.method,
       );
-    });
-    db.exec("COMMIT");
-  } catch (e) {
-    db.exec("ROLLBACK");
-    throw e;
-  }
-
-  return firstId;
+      }
+    } catch (e) {
+      throw e;
+    }
+    return firstId;
+  });
 }
 
 /** Apaga uma compra parcelada inteira (todas as parcelas de uma vez). */
-export function deletePurchase(purchaseId: string): void {
-  getDb().prepare(`DELETE FROM transactions WHERE purchaseId = ?`).run(purchaseId);
+export async function deletePurchase(purchaseId: string): Promise<void> {
+  await getFinancePgDb().prepare(`DELETE FROM transactions WHERE purchaseId = ?`).run(purchaseId);
 }
 
-export function deleteTransaction(id: string): void {
-  getDb().prepare(`DELETE FROM transactions WHERE id = ?`).run(id);
+export async function deleteTransaction(id: string): Promise<void> {
+  await getFinancePgDb().prepare(`DELETE FROM transactions WHERE id = ?`).run(id);
 }
 
 // -------------------------------------------------------------------- resumo
 
 /**
- * Resumo de um mês. Uma única passada de agregação no SQL, depois o cálculo de
- * participação/orçamento em memória (é dezena de categorias, não milhão de linhas).
+ * Resumo de um mÃªs. Uma Ãºnica passada de agregaÃ§Ã£o no SQL, depois o cÃ¡lculo de
+ * participaÃ§Ã£o/orÃ§amento em memÃ³ria (Ã© dezena de categorias, nÃ£o milhÃ£o de linhas).
  */
-export function getMonthSummary(month: string): MonthSummary {
+export async function getMonthSummary(month: string): Promise<MonthSummary> {
   const { start, end } = monthBounds(month);
-  return { ...getRangeSummary(start, end), month };
+  return { ...(await getRangeSummary(start, end)), month };
 }
 
 /**
  * Resumo de um intervalo QUALQUER de datas.
  *
- * Toda a agregação do app era por mês, o que impedia relatório semanal, anual
- * ou de período customizado. `getMonthSummary` virou um caso particular disto.
+ * Toda a agregaÃ§Ã£o do app era por mÃªs, o que impedia relatÃ³rio semanal, anual
+ * ou de perÃ­odo customizado. `getMonthSummary` virou um caso particular disto.
  */
-export function getRangeSummary(
+export async function getRangeSummary(
   start: string,
   end: string,
-): Omit<MonthSummary, "month"> {
-  const db = getDb();
+): Promise<Omit<MonthSummary, "month">> {
+  const db = getFinancePgDb();
 
-  // `transferToAccountId IS NULL` em toda agregação de mês: transferência entre
-  // contas próprias não é receita nem despesa, é o mesmo dinheiro mudando de
-  // lugar. Contá-la inflaria o total do mês e faria a regra 50/30/20 mentir.
-  const totals = db
+  // `transferToAccountId IS NULL` em toda agregaÃ§Ã£o de mÃªs: transferÃªncia entre
+  // contas prÃ³prias nÃ£o Ã© receita nem despesa, Ã© o mesmo dinheiro mudando de
+  // lugar. ContÃ¡-la inflaria o total do mÃªs e faria a regra 50/30/20 mentir.
+  const totals = await db
     .prepare(
       `SELECT type, SUM(amountCents) AS total, COUNT(*) AS n
          FROM transactions
         WHERE date BETWEEN ? AND ? AND transferToAccountId IS NULL
         GROUP BY type`,
     )
-    .all(start, end) as unknown as Array<{
-    type: TxType;
-    total: number;
-    n: number;
-  }>;
+    .all<{ type: TxType; total: number; n: number }>(start, end);
 
   const incomeCents = totals.find((t) => t.type === "INCOME")?.total ?? 0;
   const expenseCents = totals.find((t) => t.type === "EXPENSE")?.total ?? 0;
   const transactionCount = totals.reduce((acc, t) => acc + t.n, 0);
 
-  const perCategory = db
+  const perCategory = await db
     .prepare(
       `SELECT c.id, c.name, c.kind, c.color, c.icon, c.budgetCents, c.archived,
               SUM(t.amountCents) AS total
@@ -416,10 +412,10 @@ export function getRangeSummary(
          JOIN categories c ON c.id = t.categoryId
         WHERE t.date BETWEEN ? AND ? AND t.type = 'EXPENSE'
           AND t.transferToAccountId IS NULL
-        GROUP BY c.id
+        GROUP BY c.id, c.name, c.kind, c.color, c.icon, c.budgetCents, c.archived
         ORDER BY total DESC`,
     )
-    .all(start, end) as unknown as Array<CategoryRow & { total: number }>;
+    .all<CategoryRow & { total: number }>(start, end);
 
   const byCategory: CategoryTotal[] = perCategory.map((r) => ({
     category: rowToCategory(r),
@@ -435,15 +431,15 @@ export function getRangeSummary(
   const byKind: Record<CategoryKind, number> = { NEED: 0, WANT: 0, SAVE: 0 };
   for (const c of byCategory) byKind[c.category.kind] += c.totalCents;
 
-  // Renda por fonte: é o que separa a parte previsível (CLT) da variável (PJ).
-  const incomeRows = db
+  // Renda por fonte: Ã© o que separa a parte previsÃ­vel (CLT) da variÃ¡vel (PJ).
+  const incomeRows = await db
     .prepare(
       `SELECT s.id, s.name, s.kind, s.color, s.archived, SUM(t.amountCents) AS total
          FROM transactions t
          JOIN income_sources s ON s.id = t.incomeSourceId
         WHERE t.date BETWEEN ? AND ? AND t.type = 'INCOME'
           AND t.transferToAccountId IS NULL
-        GROUP BY s.id
+        GROUP BY s.id, s.name, s.kind, s.color, s.archived
         ORDER BY total DESC`,
     )
     .all(start, end) as unknown as Array<{
@@ -451,7 +447,7 @@ export function getRangeSummary(
     name: string;
     kind: IncomeKind;
     color: string;
-    archived: number;
+    archived: boolean | number;
     total: number;
   }>;
 
@@ -461,14 +457,14 @@ export function getRangeSummary(
       name: r.name,
       kind: r.kind,
       color: r.color,
-      archived: r.archived === 1,
+    archived: isTrue(r.archived),
     },
     totalCents: r.total,
     share: safePercent(r.total, incomeCents),
   }));
 
-  // Quanto do mês é compromisso herdado (parcela) e quanto é custo fixo.
-  const natureRows = db
+  // Quanto do mÃªs Ã© compromisso herdado (parcela) e quanto Ã© custo fixo.
+  const natureRows = await db
     .prepare(
       `SELECT nature, SUM(amountCents) AS total
          FROM transactions
@@ -476,7 +472,7 @@ export function getRangeSummary(
           AND transferToAccountId IS NULL
         GROUP BY nature`,
     )
-    .all(start, end) as unknown as Array<{ nature: TxNature; total: number }>;
+    .all<{ nature: TxNature; total: number }>(start, end);
 
   const installmentCents =
     natureRows.find((r) => r.nature === "PARCELADO")?.total ?? 0;
@@ -495,39 +491,39 @@ export function getRangeSummary(
   };
 }
 
-/** Lançamentos de um intervalo qualquer, do mais recente para o mais antigo. */
-export function listTransactionsInRange(
+/** LanÃ§amentos de um intervalo qualquer, do mais recente para o mais antigo. */
+export async function listTransactionsInRange(
   start: string,
   end: string,
-): TransactionWithCategory[] {
-  const rows = getDb()
+): Promise<TransactionWithCategory[]> {
+  const rows = await getFinancePgDb()
     .prepare(
       `SELECT ${TX_SELECT}
        ${TX_FROM}
         WHERE t.date BETWEEN ? AND ?
         ORDER BY t.date DESC, t.createdAt DESC`,
     )
-    .all(start, end) as unknown as TxJoinRow[];
+    .all<TxJoinRow>(start, end);
   return rows.map(rowToTransactionWithCategory);
 }
 
 /**
- * Série temporal do intervalo, agrupada por dia ou por mês.
+ * SÃ©rie temporal do intervalo, agrupada por dia ou por mÃªs.
  *
- * A granularidade segue o tamanho do período: um relatório anual em barras
- * diárias vira 365 colunas ilegíveis, e uma semana em barras mensais vira uma
- * coluna só. O corte é em ~2 meses.
+ * A granularidade segue o tamanho do perÃ­odo: um relatÃ³rio anual em barras
+ * diÃ¡rias vira 365 colunas ilegÃ­veis, e uma semana em barras mensais vira uma
+ * coluna sÃ³. O corte Ã© em ~2 meses.
  */
-export function getRangeSeries(
+export async function getRangeSeries(
   start: string,
   end: string,
-): { bucket: "dia" | "mes"; pontos: Array<{ label: string; incomeCents: number; expenseCents: number; balanceCents: number }> } {
-  const db = getDb();
+): Promise<{ bucket: "dia" | "mes"; pontos: Array<{ label: string; incomeCents: number; expenseCents: number; balanceCents: number }> }> {
+  const db = getFinancePgDb();
   const dias = daysInRange(start, end);
   const bucket: "dia" | "mes" = dias <= 62 ? "dia" : "mes";
-  const corte = bucket === "dia" ? 10 : 7; // substr: 10 = data cheia, 7 = ano-mês
+  const corte = bucket === "dia" ? 10 : 7; // substr: 10 = data cheia, 7 = ano-mÃªs
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT substr(date, 1, ${corte}) AS chave, type, SUM(amountCents) AS total
          FROM transactions
@@ -535,11 +531,7 @@ export function getRangeSeries(
         GROUP BY chave, type
         ORDER BY chave`,
     )
-    .all(start, end) as unknown as Array<{
-    chave: string;
-    type: TxType;
-    total: number;
-  }>;
+    .all<{ chave: string; type: TxType; total: number }>(start, end);
 
   // Preenche os buckets vazios: um buraco no meio da linha leria como
   // "sem dado" quando na verdade significa "nada movimentado".
@@ -553,9 +545,9 @@ export function getRangeSeries(
   }
 
   /*
-   * Índice por chave+tipo. Antes eram dois `rows.find()` lineares POR bucket —
-   * O(chaves × linhas) só para casar dado que já veio agrupado do SQL. Com
-   * intervalo longo isso dominava o tempo da página.
+   * Ãndice por chave+tipo. Antes eram dois `rows.find()` lineares POR bucket â€”
+   * O(chaves Ã— linhas) sÃ³ para casar dado que jÃ¡ veio agrupado do SQL. Com
+   * intervalo longo isso dominava o tempo da pÃ¡gina.
    */
   const porChave = new Map<string, number>();
   for (const r of rows) porChave.set(`${r.chave}:${r.type}`, r.total);
@@ -574,12 +566,12 @@ export function getRangeSeries(
   return { bucket, pontos };
 }
 
-/** Totais por forma de pagamento no intervalo — mostra por onde o dinheiro sai. */
-export function getRangeByMethod(
+/** Totais por forma de pagamento no intervalo â€” mostra por onde o dinheiro sai. */
+export async function getRangeByMethod(
   start: string,
   end: string,
-): Array<{ method: PaymentMethod | null; totalCents: number }> {
-  return getDb()
+): Promise<Array<{ method: PaymentMethod | null; totalCents: number }>> {
+  return (await getFinancePgDb())
     .prepare(
       `SELECT method, SUM(amountCents) AS totalCents
          FROM transactions
@@ -588,53 +580,42 @@ export function getRangeByMethod(
         GROUP BY method
         ORDER BY totalCents DESC`,
     )
-    .all(start, end) as unknown as Array<{
-    method: PaymentMethod | null;
-    totalCents: number;
-  }>;
+    .all<{ method: PaymentMethod | null; totalCents: number }>(start, end);
 }
 
-/** Totais por conta/cartão no intervalo. */
-export function getRangeByAccount(
+/** Totais por conta/cartÃ£o no intervalo. */
+export async function getRangeByAccount(
   start: string,
   end: string,
-): Array<{ name: string | null; color: string | null; totalCents: number }> {
-  return getDb()
+): Promise<Array<{ name: string | null; color: string | null; totalCents: number }>> {
+  return (await getFinancePgDb())
     .prepare(
       `SELECT a.name, a.color, SUM(t.amountCents) AS totalCents
          FROM transactions t
     LEFT JOIN accounts a ON a.id = t.accountId
         WHERE t.date BETWEEN ? AND ? AND t.type = 'EXPENSE'
           AND t.transferToAccountId IS NULL
-        GROUP BY t.accountId
+        GROUP BY t.accountId, a.name, a.color
         ORDER BY totalCents DESC`,
     )
-    .all(start, end) as unknown as Array<{
-    name: string | null;
-    color: string | null;
-    totalCents: number;
-  }>;
+    .all<{ name: string | null; color: string | null; totalCents: number }>(start, end);
 }
 
-/** Série mensal para o gráfico de evolução. Meses sem lançamento viram zero. */
-export function getMonthlySeries(endMonth: string, count: number) {
-  const db = getDb();
+/** SÃ©rie mensal para o grÃ¡fico de evoluÃ§Ã£o. Meses sem lanÃ§amento viram zero. */
+export async function getMonthlySeries(endMonth: string, count: number) {
+  const db = getFinancePgDb();
   const months = monthRange(endMonth, count);
   const { start } = monthBounds(months[0]);
   const { end } = monthBounds(endMonth);
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT substr(date, 1, 7) AS month, type, SUM(amountCents) AS total
          FROM transactions
         WHERE date BETWEEN ? AND ?
         GROUP BY month, type`,
     )
-    .all(start, end) as unknown as Array<{
-    month: string;
-    type: TxType;
-    total: number;
-  }>;
+    .all<{ month: string; type: TxType; total: number }>(start, end);
 
   // Preenche o eixo com todos os meses: um buraco no meio da linha leria como
   // "sem dado" quando na verdade significa "nada gasto".
@@ -653,12 +634,12 @@ export function getMonthlySeries(endMonth: string, count: number) {
 }
 
 /**
- * Sobra média dos últimos N meses fechados (exclui o mês corrente, que ainda
- * está incompleto e daria uma sobra otimista demais). É o número que vira o
- * aporte sugerido na projeção de investimento.
+ * Sobra mÃ©dia dos Ãºltimos N meses fechados (exclui o mÃªs corrente, que ainda
+ * estÃ¡ incompleto e daria uma sobra otimista demais). Ã‰ o nÃºmero que vira o
+ * aporte sugerido na projeÃ§Ã£o de investimento.
  */
-export function getAverageSurplus(endMonth: string, count = 3): number {
-  const series = getMonthlySeries(endMonth, count + 1).slice(0, count);
+export async function getAverageSurplus(endMonth: string, count = 3): Promise<number> {
+  const series = (await getMonthlySeries(endMonth, count + 1)).slice(0, count);
   const withData = series.filter((s) => s.incomeCents > 0 || s.expenseCents > 0);
   if (withData.length === 0) return 0;
   const sum = withData.reduce((acc, s) => acc + s.balanceCents, 0);
@@ -666,57 +647,56 @@ export function getAverageSurplus(endMonth: string, count = 3): number {
 }
 
 /**
- * Tudo que já foi para categorias do tipo "poupar", desde sempre.
- * É a proxy da reserva de emergência: o app não conecta na corretora, então o
- * que ele sabe sobre o seu patrimônio é o que você registrou como guardado.
+ * Tudo que jÃ¡ foi para categorias do tipo "poupar", desde sempre.
+ * Ã‰ a proxy da reserva de emergÃªncia: o app nÃ£o conecta na corretora, entÃ£o o
+ * que ele sabe sobre o seu patrimÃ´nio Ã© o que vocÃª registrou como guardado.
  */
-export function getTotalSavedAllTime(): number {
-  const row = getDb()
+export async function getTotalSavedAllTime(): Promise<number> {
+  const row = await getFinancePgDb()
     .prepare(
       `SELECT COALESCE(SUM(t.amountCents), 0) AS total
          FROM transactions t
          JOIN categories c ON c.id = t.categoryId
         WHERE c.kind = 'SAVE' AND t.type = 'EXPENSE'`,
     )
-    .get() as { total: number };
-  return row.total;
+    .get<{ total: number }>();
+  return row?.total ?? 0;
 }
 
-/** Soma mensal dos lançamentos marcados como recorrentes. */
-export function getRecurringMonthlyTotal(): number {
-  return listRecurring().reduce((acc, t) => acc + t.amountCents, 0);
+/** Soma mensal dos lanÃ§amentos marcados como recorrentes. */
+export async function getRecurringMonthlyTotal(): Promise<number> {
+  return (await listRecurring()).reduce((acc, t) => acc + t.amountCents, 0);
 }
 
-/** Custos fixos distintos — candidatos naturais a corte. */
-export function listRecurring(): TransactionWithCategory[] {
-  const rows = getDb()
+/** Custos fixos distintos â€” candidatos naturais a corte. */
+export async function listRecurring(): Promise<TransactionWithCategory[]> {
+  const rows = await getFinancePgDb()
     .prepare(
-      `SELECT ${TX_SELECT}
+      `SELECT DISTINCT ON (t.description, t.categoryId) ${TX_SELECT}
        ${TX_FROM}
         WHERE t.nature = 'FIXO' AND t.type = 'EXPENSE'
-        GROUP BY t.description, t.categoryId
-        ORDER BY t.amountCents DESC`,
+        ORDER BY t.description, t.categoryId, t.amountCents DESC`,
     )
-    .all() as unknown as TxJoinRow[];
+    .all<TxJoinRow>();
   return rows.map(rowToTransactionWithCategory);
 }
 
 /**
- * Parcelas que ainda vão cair, a partir de amanhã.
+ * Parcelas que ainda vÃ£o cair, a partir de amanhÃ£.
  *
- * É o número que responde "quanto do meu futuro já está comprometido?".
- * Uma compra em 12x não dói no mês da compra — dói nos onze meses seguintes,
- * e é justamente por isso que ela some do radar de quem só olha o mês atual.
+ * Ã‰ o nÃºmero que responde "quanto do meu futuro jÃ¡ estÃ¡ comprometido?".
+ * Uma compra em 12x nÃ£o dÃ³i no mÃªs da compra â€” dÃ³i nos onze meses seguintes,
+ * e Ã© justamente por isso que ela some do radar de quem sÃ³ olha o mÃªs atual.
  */
-export function getFutureInstallments(): {
+export async function getFutureInstallments(): Promise<{
   totalCents: number;
   count: number;
   byMonth: Array<{ month: string; cents: number }>;
-} {
-  const db = getDb();
+}> {
+  const db = getFinancePgDb();
   const todayIso = today();
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT substr(date, 1, 7) AS month, SUM(amountCents) AS total, COUNT(*) AS n
          FROM transactions
@@ -724,11 +704,7 @@ export function getFutureInstallments(): {
         GROUP BY month
         ORDER BY month`,
     )
-    .all(todayIso) as unknown as Array<{
-    month: string;
-    total: number;
-    n: number;
-  }>;
+    .all<{ month: string; total: number; n: number }>(todayIso);
 
   return {
     totalCents: rows.reduce((acc, r) => acc + r.total, 0),
@@ -753,11 +729,11 @@ interface AccountRow {
   bankName: string | null;
   logoUrl: string | null;
   color: string;
-  archived: number;
+  archived: boolean | number;
 }
 
-export function listAccounts(includeArchived = false): Account[] {
-  const rows = getDb()
+export async function listAccounts(includeArchived = false): Promise<Account[]> {
+  const rows = await getFinancePgDb()
     .prepare(
       `SELECT id, name, kind, openingCents, closingDay, dueDay, last4,
               creditLimitCents, overdraftLimitCents, bankIspb, bankName, logoUrl,
@@ -766,50 +742,42 @@ export function listAccounts(includeArchived = false): Account[] {
         WHERE (? = 1 OR archived = 0)
         ORDER BY kind, name`,
     )
-    .all(includeArchived ? 1 : 0) as unknown as AccountRow[];
-  return rows.map((r) => ({ ...r, archived: r.archived === 1 }));
+    .all<AccountRow>(includeArchived ? true : false);
+  return rows.map((r) => ({ ...r, archived: isTrue(r.archived) }));
 }
 
 /**
- * Carteiras com saldo CALCULADO: saldo inicial + entradas − saídas.
+ * Carteiras com saldo CALCULADO: saldo inicial + entradas âˆ’ saÃ­das.
  *
- * O saldo nunca é gravado numa coluna. Se fosse, bastaria excluir um
- * lançamento para o saldo guardado divergir do extrato — e não haveria como
- * saber qual dos dois está certo. Calcular sempre custa uma agregação e
+ * O saldo nunca Ã© gravado numa coluna. Se fosse, bastaria excluir um
+ * lanÃ§amento para o saldo guardado divergir do extrato â€” e nÃ£o haveria como
+ * saber qual dos dois estÃ¡ certo. Calcular sempre custa uma agregaÃ§Ã£o e
  * elimina a classe inteira de bug.
  */
-export function listAccountsWithBalance(month: string): AccountWithBalance[] {
-  const db = getDb();
-  const accounts = listAccounts();
+export async function listAccountsWithBalance(month: string): Promise<AccountWithBalance[]> {
+  const db = getFinancePgDb();
+  const accounts = await listAccounts();
   if (accounts.length === 0) return [];
 
   const { start, end } = monthBounds(month);
 
-  const totals = db
+  const totals = await db
     .prepare(
       `SELECT accountId, type, SUM(amountCents) AS total
          FROM transactions
         WHERE accountId IS NOT NULL
         GROUP BY accountId, type`,
     )
-    .all() as unknown as Array<{
-    accountId: string;
-    type: TxType;
-    total: number;
-  }>;
+    .all<{ accountId: string; type: TxType; total: number }>();
 
-  const monthTotals = db
+  const monthTotals = await db
     .prepare(
       `SELECT accountId, type, SUM(amountCents) AS total
          FROM transactions
         WHERE accountId IS NOT NULL AND date BETWEEN ? AND ?
         GROUP BY accountId, type`,
     )
-    .all(start, end) as unknown as Array<{
-    accountId: string;
-    type: TxType;
-    total: number;
-  }>;
+    .all<{ accountId: string; type: TxType; total: number }>(start, end);
 
   const pick = (
     rows: typeof totals,
@@ -819,17 +787,17 @@ export function listAccountsWithBalance(month: string): AccountWithBalance[] {
     rows.find((r) => r.accountId === accountId && r.type === type)?.total ?? 0;
 
   /*
-   * O lado que RECEBE a transferência.
+   * O lado que RECEBE a transferÃªncia.
    *
-   * A linha de transferência é gravada como EXPENSE na conta de origem — a
-   * consulta acima já a subtrai de lá. Falta creditar o destino, senão o
-   * dinheiro simplesmente evapora: some da conta corrente e não aparece no
-   * cartão nem na poupança.
+   * A linha de transferÃªncia Ã© gravada como EXPENSE na conta de origem â€” a
+   * consulta acima jÃ¡ a subtrai de lÃ¡. Falta creditar o destino, senÃ£o o
+   * dinheiro simplesmente evapora: some da conta corrente e nÃ£o aparece no
+   * cartÃ£o nem na poupanÃ§a.
    *
-   * No cartão, é isso que zera a fatura: o saldo do cartão é negativo pelas
-   * compras, e a transferência entra somando de volta.
+   * No cartÃ£o, Ã© isso que zera a fatura: o saldo do cartÃ£o Ã© negativo pelas
+   * compras, e a transferÃªncia entra somando de volta.
    */
-  const recebidos = db
+  const recebidos = await db
     .prepare(
       `SELECT transferToAccountId AS accountId, SUM(amountCents) AS total
          FROM transactions
@@ -854,26 +822,26 @@ export function listAccountsWithBalance(month: string): AccountWithBalance[] {
 }
 
 /**
- * Quanto a fatura de um cartão soma num mês.
+ * Quanto a fatura de um cartÃ£o soma num mÃªs.
  *
- * Não é campo guardado: é a soma das compras cuja data de saída cai no mês —
- * e a data de saída de uma compra no cartão já é o vencimento da fatura
- * (ver resolveCashOutDate). Ou seja, a fatura É o conjunto de lançamentos
- * daquele mês naquele cartão, e por isso nunca fica desatualizada.
+ * NÃ£o Ã© campo guardado: Ã© a soma das compras cuja data de saÃ­da cai no mÃªs â€”
+ * e a data de saÃ­da de uma compra no cartÃ£o jÃ¡ Ã© o vencimento da fatura
+ * (ver resolveCashOutDate). Ou seja, a fatura Ã‰ o conjunto de lanÃ§amentos
+ * daquele mÃªs naquele cartÃ£o, e por isso nunca fica desatualizada.
  */
-export function getCardInvoice(cardId: string, month: string): number {
+export async function getCardInvoice(cardId: string, month: string): Promise<number> {
   const { start, end } = monthBounds(month);
-  const db = getDb();
+  const db = getFinancePgDb();
 
   /*
    * Compras somam, estornos abatem.
    *
-   * Uma ENTRADA no cartão só existe como devolução da loja — o dinheiro volta
-   * para o limite. Contar só as despesas deixaria a fatura acima do que o banco
-   * cobra de verdade, e o saldo do cartão (que já desconta a entrada) nunca
+   * Uma ENTRADA no cartÃ£o sÃ³ existe como devoluÃ§Ã£o da loja â€” o dinheiro volta
+   * para o limite. Contar sÃ³ as despesas deixaria a fatura acima do que o banco
+   * cobra de verdade, e o saldo do cartÃ£o (que jÃ¡ desconta a entrada) nunca
    * bateria com o valor a pagar.
    */
-  const row = db
+  const row = await db
     .prepare(
       `SELECT COALESCE(
                 SUM(CASE WHEN type = 'EXPENSE' THEN amountCents ELSE -amountCents END),
@@ -884,21 +852,21 @@ export function getCardInvoice(cardId: string, month: string): number {
           AND transferToAccountId IS NULL
           AND date BETWEEN ? AND ?`,
     )
-    .get(cardId, start, end) as { total: number };
+    .get<{ total: number }>(cardId, start, end);
 
   /*
-   * A fatura que já estava aberta no dia do cadastro também conta.
+   * A fatura que jÃ¡ estava aberta no dia do cadastro tambÃ©m conta.
    *
-   * Quem cadastra um cartão informa "fatura em aberto hoje" — esse valor
-   * aparecia no saldo do cartão mas NÃO na lista de contas a pagar, porque
-   * aqui só se somava lançamento. Resultado: o cartão mostrava R$ 631,99 de
-   * dívida e não havia nada para pagar.
+   * Quem cadastra um cartÃ£o informa "fatura em aberto hoje" â€” esse valor
+   * aparecia no saldo do cartÃ£o mas NÃƒO na lista de contas a pagar, porque
+   * aqui sÃ³ se somava lanÃ§amento. Resultado: o cartÃ£o mostrava R$ 631,99 de
+   * dÃ­vida e nÃ£o havia nada para pagar.
    *
-   * O saldo de abertura pertence à primeira fatura que vence a partir da data
-   * do cadastro — calculada com a mesma regra de ciclo das compras, para não
-   * existirem duas noções de "em que fatura isso cai".
+   * O saldo de abertura pertence Ã  primeira fatura que vence a partir da data
+   * do cadastro â€” calculada com a mesma regra de ciclo das compras, para nÃ£o
+   * existirem duas noÃ§Ãµes de "em que fatura isso cai".
    */
-  const card = db
+  const card = await db
     .prepare(
       `SELECT openingCents, closingDay, dueDay, date(createdAt) AS criadoEm
          FROM accounts WHERE id = ? AND kind = 'CARTAO'`,
@@ -913,7 +881,7 @@ export function getCardInvoice(cardId: string, month: string): number {
     | undefined;
 
   if (!card || card.openingCents === 0 || !card.closingDay || !card.dueDay) {
-    return row.total;
+    return row?.total ?? 0;
   }
 
   const mesDaAbertura = firstInvoiceDueDate(
@@ -922,41 +890,41 @@ export function getCardInvoice(cardId: string, month: string): number {
     card.dueDay,
   ).slice(0, 7);
 
-  // openingCents de cartão é gravado negativo (dívida); a fatura é o módulo.
+  // openingCents de cartÃ£o Ã© gravado negativo (dÃ­vida); a fatura Ã© o mÃ³dulo.
   return month === mesDaAbertura
-    ? row.total + Math.abs(card.openingCents)
-    : row.total;
+    ? (row?.total ?? 0) + Math.abs(card.openingCents)
+    : row?.total ?? 0;
 }
 
 /**
- * Paga a fatura do cartão como TRANSFERÊNCIA, não como despesa.
+ * Paga a fatura do cartÃ£o como TRANSFERÃŠNCIA, nÃ£o como despesa.
  *
- * As compras do cartão já entraram como gasto no mês do vencimento. Registrar
+ * As compras do cartÃ£o jÃ¡ entraram como gasto no mÃªs do vencimento. Registrar
  * o pagamento da fatura como uma despesa nova contaria o mesmo dinheiro duas
- * vezes e dobraria o total do mês. Aqui o dinheiro só muda de lugar: sai da
- * conta corrente, entra no cartão (zerando a fatura).
+ * vezes e dobraria o total do mÃªs. Aqui o dinheiro sÃ³ muda de lugar: sai da
+ * conta corrente, entra no cartÃ£o (zerando a fatura).
  */
-export function payCardInvoice(input: {
+export async function payCardInvoice(input: {
   cardId: string;
   fromAccountId: string;
   amountCents: number;
   date: string;
-}): string {
-  const card = getAccount(input.cardId);
-  if (!card) throw new Error("Cartão não encontrado");
+}): Promise<string> {
+  const card = await getAccount(input.cardId);
+  if (!card) throw new Error("CartÃ£o nÃ£o encontrado");
 
-  const db = getDb();
+  const db = getFinancePgDb();
   const id = newId();
 
-  // categoryId é obrigatório no schema, mas transferência não tem categoria de
-  // gasto. Usa a primeira disponível e fica fora de toda agregação por causa
-  // do transferToAccountId — nenhum relatório a enxerga.
-  const categoria = db.prepare(`SELECT id FROM categories LIMIT 1`).get() as
+  // categoryId Ã© obrigatÃ³rio no schema, mas transferÃªncia nÃ£o tem categoria de
+  // gasto. Usa a primeira disponÃ­vel e fica fora de toda agregaÃ§Ã£o por causa
+  // do transferToAccountId â€” nenhum relatÃ³rio a enxerga.
+  const categoria = await db.prepare(`SELECT id FROM categories LIMIT 1`).get<{ id: string }>() as
     | { id: string }
     | undefined;
   if (!categoria) throw new Error("Nenhuma categoria cadastrada");
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO transactions
        (id, type, amountCents, date, description, nature, notes, categoryId,
         accountId, transferToAccountId, method)
@@ -974,7 +942,7 @@ export function payCardInvoice(input: {
   return id;
 }
 
-export function createAccount(input: {
+export async function createAccount(input: {
   name: string;
   kind: AccountKind;
   openingCents: number;
@@ -987,9 +955,9 @@ export function createAccount(input: {
   bankName: string | null;
   logoUrl: string | null;
   color: string;
-}): string {
+}): Promise<string> {
   const id = newId();
-  getDb()
+  await getFinancePgDb()
     .prepare(
       `INSERT INTO accounts (id, name, kind, openingCents, closingDay, dueDay, last4,
                               creditLimitCents, overdraftLimitCents, bankIspb,
@@ -1000,17 +968,17 @@ export function createAccount(input: {
       id,
       input.name,
       input.kind,
-      // Fatura de cartão é SEMPRE dívida: guardamos negativo, independente de
-      // o usuário ter digitado com ou sem sinal. Se entrasse positivo, pagar a
-      // fatura (que soma de volta) aumentaria a dívida em vez de zerá-la.
+      // Fatura de cartÃ£o Ã© SEMPRE dÃ­vida: guardamos negativo, independente de
+      // o usuÃ¡rio ter digitado com ou sem sinal. Se entrasse positivo, pagar a
+      // fatura (que soma de volta) aumentaria a dÃ­vida em vez de zerÃ¡-la.
       input.kind === "CARTAO" ? -Math.abs(input.openingCents) : input.openingCents,
-      // Fechamento/vencimento só existem em cartão. Guardar num débito seria
+      // Fechamento/vencimento sÃ³ existem em cartÃ£o. Guardar num dÃ©bito seria
       // dado morto que a UI teria que aprender a ignorar.
       input.kind === "CARTAO" ? input.closingDay : null,
       input.kind === "CARTAO" ? input.dueDay : null,
       input.kind === "CARTAO" ? input.last4 : null,
       input.kind === "CARTAO" ? input.creditLimitCents : null,
-      // Cheque especial só existe em conta, nunca em cartão.
+      // Cheque especial sÃ³ existe em conta, nunca em cartÃ£o.
       input.kind === "CARTAO" ? null : input.overdraftLimitCents,
       input.bankIspb,
       input.bankName,
@@ -1021,14 +989,14 @@ export function createAccount(input: {
 }
 
 /**
- * Edita uma conta/cartão já cadastrado.
+ * Edita uma conta/cartÃ£o jÃ¡ cadastrado.
  *
- * `openingCents` é o saldo INICIAL, não o atual: mexer nele reposiciona todo o
- * histórico, porque o saldo atual é sempre inicial + entradas − saídas. É
- * exatamente o que se quer quando o cadastro saiu errado — corrigir a origem em
- * vez de inventar um lançamento de acerto que sujaria o extrato.
+ * `openingCents` Ã© o saldo INICIAL, nÃ£o o atual: mexer nele reposiciona todo o
+ * histÃ³rico, porque o saldo atual Ã© sempre inicial + entradas âˆ’ saÃ­das. Ã‰
+ * exatamente o que se quer quando o cadastro saiu errado â€” corrigir a origem em
+ * vez de inventar um lanÃ§amento de acerto que sujaria o extrato.
  */
-export function updateAccount(
+export async function updateAccount(
   id: string,
   input: {
     name: string;
@@ -1044,8 +1012,8 @@ export function updateAccount(
     logoUrl: string | null;
     color: string;
   },
-): void {
-  getDb()
+): Promise<void> {
+  await getFinancePgDb()
     .prepare(
       `UPDATE accounts
           SET name = ?, kind = ?, openingCents = ?, closingDay = ?, dueDay = ?,
@@ -1056,9 +1024,9 @@ export function updateAccount(
     .run(
       input.name,
       input.kind,
-      // Fatura de cartão é SEMPRE dívida: guardamos negativo, independente de
-      // o usuário ter digitado com ou sem sinal. Se entrasse positivo, pagar a
-      // fatura (que soma de volta) aumentaria a dívida em vez de zerá-la.
+      // Fatura de cartÃ£o Ã© SEMPRE dÃ­vida: guardamos negativo, independente de
+      // o usuÃ¡rio ter digitado com ou sem sinal. Se entrasse positivo, pagar a
+      // fatura (que soma de volta) aumentaria a dÃ­vida em vez de zerÃ¡-la.
       input.kind === "CARTAO" ? -Math.abs(input.openingCents) : input.openingCents,
       input.kind === "CARTAO" ? input.closingDay : null,
       input.kind === "CARTAO" ? input.dueDay : null,
@@ -1073,64 +1041,64 @@ export function updateAccount(
     );
 }
 
-export function deleteAccount(id: string): void {
-  // Os lançamentos sobrevivem e só perdem o vínculo (ON DELETE SET NULL):
+export async function deleteAccount(id: string): Promise<void> {
+  // Os lanÃ§amentos sobrevivem e sÃ³ perdem o vÃ­nculo (ON DELETE SET NULL):
   // o gasto aconteceu, independentemente da carteira ainda existir.
-  getDb().prepare(`DELETE FROM accounts WHERE id = ?`).run(id);
+  await getFinancePgDb().prepare(`DELETE FROM accounts WHERE id = ?`).run(id);
 }
 
 // -------------------------------------------------------- fontes de renda
 
-export function listIncomeSources(includeArchived = false): IncomeSource[] {
-  const rows = getDb()
+export async function listIncomeSources(includeArchived = false): Promise<IncomeSource[]> {
+  const rows = await getFinancePgDb()
     .prepare(
       `SELECT id, name, kind, color, archived
          FROM income_sources
         WHERE (? = 1 OR archived = 0)
         ORDER BY kind, name`,
     )
-    .all(includeArchived ? 1 : 0) as unknown as Array<
+    .all(includeArchived ? true : false) as unknown as Array<
     Omit<IncomeSource, "archived"> & { archived: number }
   >;
   return rows.map((r) => ({ ...r, archived: r.archived === 1 }));
 }
 
-export function createIncomeSource(input: {
+export async function createIncomeSource(input: {
   name: string;
   kind: IncomeKind;
   color: string;
-}): string {
+}): Promise<string> {
   const id = newId();
-  getDb()
+  await getFinancePgDb()
     .prepare(`INSERT INTO income_sources (id, name, kind, color) VALUES (?, ?, ?, ?)`)
     .run(id, input.name, input.kind, input.color);
   return id;
 }
 
-export function deleteIncomeSource(id: string): void {
-  getDb().prepare(`DELETE FROM income_sources WHERE id = ?`).run(id);
+export async function deleteIncomeSource(id: string): Promise<void> {
+  await getFinancePgDb().prepare(`DELETE FROM income_sources WHERE id = ?`).run(id);
 }
 
 /**
- * Renda por fonte nos últimos N meses.
+ * Renda por fonte nos Ãºltimos N meses.
  * Serve para ver a estabilidade de cada emprego: CLT costuma ser uma linha
- * reta, PJ costuma ser um serrote — e é o serrote que define quanto dá para
- * assumir de custo fixo com segurança.
+ * reta, PJ costuma ser um serrote â€” e Ã© o serrote que define quanto dÃ¡ para
+ * assumir de custo fixo com seguranÃ§a.
  */
-export function getIncomeBySourceHistory(endMonth: string, count: number) {
-  const db = getDb();
+export async function getIncomeBySourceHistory(endMonth: string, count: number) {
+  const db = getFinancePgDb();
   const months = monthRange(endMonth, count);
   const { start } = monthBounds(months[0]);
   const { end } = monthBounds(endMonth);
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT substr(t.date, 1, 7) AS month, s.id AS sourceId, s.name AS sourceName,
               SUM(t.amountCents) AS total
          FROM transactions t
          JOIN income_sources s ON s.id = t.incomeSourceId
         WHERE t.type = 'INCOME' AND t.date BETWEEN ? AND ?
-        GROUP BY month, s.id`,
+        GROUP BY month, s.id, s.name`,
     )
     .all(start, end) as unknown as Array<{
     month: string;
@@ -1152,18 +1120,18 @@ interface BillRow {
   dueDay: number | null;
   dueDate: string | null;
   categoryId: string;
-  variable: number;
-  active: number;
+  variable: boolean | number;
+  active: boolean | number;
   barcode: string | null;
   notes: string | null;
 }
 
 function rowToBill(r: BillRow): Bill {
-  return { ...r, variable: r.variable === 1, active: r.active === 1 };
+  return { ...r, variable: isTrue(r.variable), active: isTrue(r.active) };
 }
 
-export function listBills(includeInactive = false): Bill[] {
-  const rows = getDb()
+export async function listBills(includeInactive = false): Promise<Bill[]> {
+  const rows = await getFinancePgDb()
     .prepare(
       `SELECT id, name, recurrence, amountCents, dueDay, dueDate, categoryId,
               variable, active, barcode, notes
@@ -1171,13 +1139,13 @@ export function listBills(includeInactive = false): Bill[] {
         WHERE (? = 1 OR active = 1)
         ORDER BY recurrence, COALESCE(dueDay, 99), dueDate, name`,
     )
-    .all(includeInactive ? 1 : 0) as unknown as BillRow[];
+    .all<BillRow>(includeInactive ? true : false);
   return rows.map(rowToBill);
 }
 
-export function createBill(input: Omit<Bill, "id">): string {
+export async function createBill(input: Omit<Bill, "id">): Promise<string> {
   const id = newId();
-  getDb()
+  await getFinancePgDb()
     .prepare(
       `INSERT INTO fixed_bills
          (id, name, recurrence, amountCents, dueDay, dueDate, categoryId,
@@ -1192,59 +1160,59 @@ export function createBill(input: Omit<Bill, "id">): string {
       input.dueDay,
       input.dueDate,
       input.categoryId,
-      input.variable ? 1 : 0,
-      input.active ? 1 : 0,
+      input.variable,
+      input.active,
       input.barcode,
       input.notes,
     );
   return id;
 }
 
-export function setBillActive(id: string, active: boolean): void {
-  getDb()
+export async function setBillActive(id: string, active: boolean): Promise<void> {
+  await getFinancePgDb()
     .prepare(`UPDATE fixed_bills SET active = ? WHERE id = ?`)
-    .run(active ? 1 : 0, id);
+    .run(active, id);
 }
 
-export function deleteBill(id: string): void {
-  // O lançamento já feito sobrevive: ele é um fato do passado. Só perde o
-  // vínculo com a conta (ON DELETE SET NULL), então o histórico de gastos
-  // continua íntegro depois de excluir uma conta que não existe mais.
-  getDb().prepare(`DELETE FROM fixed_bills WHERE id = ?`).run(id);
+export async function deleteBill(id: string): Promise<void> {
+  // O lanÃ§amento jÃ¡ feito sobrevive: ele Ã© um fato do passado. SÃ³ perde o
+  // vÃ­nculo com a conta (ON DELETE SET NULL), entÃ£o o histÃ³rico de gastos
+  // continua Ã­ntegro depois de excluir uma conta que nÃ£o existe mais.
+  await getFinancePgDb().prepare(`DELETE FROM fixed_bills WHERE id = ?`).run(id);
 }
 
-export function getBill(id: string): Bill | null {
-  const row = getDb()
+export async function getBill(id: string): Promise<Bill | null> {
+  const row = await getFinancePgDb()
     .prepare(
       `SELECT id, name, recurrence, amountCents, dueDay, dueDate, categoryId,
               variable, active, barcode, notes
          FROM fixed_bills WHERE id = ?`,
     )
-    .get(id) as unknown as BillRow | undefined;
+    .get<BillRow>(id);
   return row ? rowToBill(row) : null;
 }
 
 /**
- * As contas de um mês, já com status resolvido.
+ * As contas de um mÃªs, jÃ¡ com status resolvido.
  *
- * Regra do vencimento: dia 31 num mês de 30 dias vence no dia 30. Sem esse
- * clamp, "2026-02-31" seria uma data inexistente e toda comparação daria errado.
+ * Regra do vencimento: dia 31 num mÃªs de 30 dias vence no dia 30. Sem esse
+ * clamp, "2026-02-31" seria uma data inexistente e toda comparaÃ§Ã£o daria errado.
  */
-export function getBillsForMonth(month: string): BillInMonth[] {
-  const bills = listBills();
-  const categories = new Map(listCategories(true).map((c) => [c.id, c]));
+export async function getBillsForMonth(month: string): Promise<BillInMonth[]> {
+  const bills = await listBills();
+  const categories = new Map((await listCategories(true)).map((c) => [c.id, c]));
   const { start, end } = monthBounds(month);
   const lastDay = Number(end.split("-")[2]);
   const todayIso = today();
 
-  // Uma consulta só para os pagamentos do mês inteiro, em vez de uma por conta.
-  const payments = getDb()
+  // Uma consulta sÃ³ para os pagamentos do mÃªs inteiro, em vez de uma por conta.
+  const payments = await getFinancePgDb()
     .prepare(
       `SELECT id, billId, amountCents
          FROM transactions
         WHERE billId IS NOT NULL AND date BETWEEN ? AND ?`,
     )
-    .all(start, end) as unknown as Array<{
+    .all<{ id: string; billId: string; amountCents: number }>(start, end) as Array<{
     id: string;
     billId: string;
     amountCents: number;
@@ -1260,7 +1228,7 @@ export function getBillsForMonth(month: string): BillInMonth[] {
       const day = Math.min(bill.dueDay ?? 1, lastDay);
       dueDate = `${month}-${String(day).padStart(2, "0")}`;
     } else {
-      // Boleto avulso só aparece no mês em que vence.
+      // Boleto avulso sÃ³ aparece no mÃªs em que vence.
       if (!bill.dueDate || bill.dueDate < start || bill.dueDate > end) continue;
       dueDate = bill.dueDate;
     }
@@ -1291,34 +1259,34 @@ export function getBillsForMonth(month: string): BillInMonth[] {
   }
 
   /*
-   * A fatura de cada cartão entra aqui automaticamente, sem cadastro separado.
+   * A fatura de cada cartÃ£o entra aqui automaticamente, sem cadastro separado.
    *
-   * Uma fatura É uma conta a pagar: tem valor e vencimento. Mas o valor não se
-   * cadastra — ele é a soma das compras do mês naquele cartão. Por isso a
-   * fatura é SINTETIZADA na leitura em vez de virar linha em fixed_bills: uma
+   * Uma fatura Ã‰ uma conta a pagar: tem valor e vencimento. Mas o valor nÃ£o se
+   * cadastra â€” ele Ã© a soma das compras do mÃªs naquele cartÃ£o. Por isso a
+   * fatura Ã© SINTETIZADA na leitura em vez de virar linha em fixed_bills: uma
    * linha guardada teria um valor que envelhece a cada nova compra.
    */
-  for (const card of listAccounts().filter((a) => a.kind === "CARTAO")) {
-    const valor = getCardInvoice(card.id, month);
+  for (const card of (await listAccounts()).filter((a) => a.kind === "CARTAO")) {
+    const valor = await getCardInvoice(card.id, month);
     if (valor <= 0) continue;
 
     const dia = Math.min(card.dueDay ?? 1, lastDay);
     const dueDate = `${month}-${String(dia).padStart(2, "0")}`;
     const daysUntilDue = daysBetween(todayIso, dueDate);
 
-    // Fatura paga = existe transferência para o cartão dentro do mês.
-    const pagamento = getDb()
+    // Fatura paga = existe transferÃªncia para o cartÃ£o dentro do mÃªs.
+    const pagamento = await getFinancePgDb()
       .prepare(
         `SELECT id, amountCents FROM transactions
           WHERE transferToAccountId = ? AND date BETWEEN ? AND ?`,
       )
-      .get(card.id, start, end) as { id: string; amountCents: number } | undefined;
+      .get<{ id: string; amountCents: number }>(card.id, start, end);
 
     result.push({
       bill: {
-        // Prefixo "card:" deixa claro que é sintética: não existe em
+        // Prefixo "card:" deixa claro que Ã© sintÃ©tica: nÃ£o existe em
         // fixed_bills, e a UI usa isso para oferecer "pagar fatura" em vez da
-        // quitação normal.
+        // quitaÃ§Ã£o normal.
         id: `card:${card.id}`,
         name: `Fatura ${card.name}`,
         recurrence: "MONTHLY",
@@ -1333,7 +1301,7 @@ export function getBillsForMonth(month: string): BillInMonth[] {
       },
       category: {
         id: `card:${card.id}`,
-        name: "Cartão de crédito",
+        name: "CartÃ£o de crÃ©dito",
         kind: "NEED",
         color: card.color,
         icon: "credit-card",
@@ -1355,23 +1323,23 @@ export function getBillsForMonth(month: string): BillInMonth[] {
   }
 
   /*
-   * Lançamento com data FUTURA também é conta a pagar.
+   * LanÃ§amento com data FUTURA tambÃ©m Ã© conta a pagar.
    *
-   * Quem registra "mensalidade da faculdade, vence 09/09" está registrando um
-   * compromisso — e esperava vê-lo em A pagar. Antes ele ficava só no extrato
-   * de lançamentos, invisível justamente na tela feita para responder "o que
+   * Quem registra "mensalidade da faculdade, vence 09/09" estÃ¡ registrando um
+   * compromisso â€” e esperava vÃª-lo em A pagar. Antes ele ficava sÃ³ no extrato
+   * de lanÃ§amentos, invisÃ­vel justamente na tela feita para responder "o que
    * eu tenho que pagar".
    *
-   * O que define "ainda a pagar" é NÃO TER CONTA atribuída, não só a data.
-   * Atribuir a conta é o que a quitação faz — então, uma vez quitado, o
-   * lançamento sai da lista sozinho, sem precisar de um campo "pago" separado
+   * O que define "ainda a pagar" Ã© NÃƒO TER CONTA atribuÃ­da, nÃ£o sÃ³ a data.
+   * Atribuir a conta Ã© o que a quitaÃ§Ã£o faz â€” entÃ£o, uma vez quitado, o
+   * lanÃ§amento sai da lista sozinho, sem precisar de um campo "pago" separado
    * que poderia divergir do resto.
    *
-   * Ficam de fora, para não contar duas vezes:
-   *  - compra no cartão: já entra na fatura daquele cartão
-   *  - quitação de conta (billId): a conta já está na lista por si
+   * Ficam de fora, para nÃ£o contar duas vezes:
+   *  - compra no cartÃ£o: jÃ¡ entra na fatura daquele cartÃ£o
+   *  - quitaÃ§Ã£o de conta (billId): a conta jÃ¡ estÃ¡ na lista por si
    */
-  const agendados = getDb()
+  const agendados = await getFinancePgDb()
     .prepare(
       `SELECT t.id, t.description, t.amountCents, t.date, t.categoryId,
               c.name AS c_name, c.kind AS c_kind, c.color AS c_color,
@@ -1397,15 +1365,15 @@ export function getBillsForMonth(month: string): BillInMonth[] {
     c_color: string;
     c_icon: string;
     c_budget: number | null;
-    c_archived: number;
+    c_archived: boolean | number;
   }>;
 
   for (const t of agendados) {
     result.push({
       bill: {
-        // Prefixo "tx:" identifica que a origem é um lançamento agendado, e
-        // não uma linha de fixed_bills. Quitar isso ATUALIZA o lançamento em
-        // vez de criar outro — senão o gasto entraria duas vezes.
+        // Prefixo "tx:" identifica que a origem Ã© um lanÃ§amento agendado, e
+        // nÃ£o uma linha de fixed_bills. Quitar isso ATUALIZA o lanÃ§amento em
+        // vez de criar outro â€” senÃ£o o gasto entraria duas vezes.
         id: `tx:${t.id}`,
         name: t.description,
         recurrence: "ONCE",
@@ -1425,7 +1393,7 @@ export function getBillsForMonth(month: string): BillInMonth[] {
         color: t.c_color,
         icon: t.c_icon,
         budgetCents: t.c_budget,
-        archived: t.c_archived === 1,
+        archived: isTrue(t.c_archived),
       },
       dueDate: t.date,
       status: "UPCOMING",
@@ -1436,7 +1404,7 @@ export function getBillsForMonth(month: string): BillInMonth[] {
   }
 
   // Em aberto primeiro, e dentro disso a mais urgente no topo: a tela responde
-  // "o que eu preciso pagar agora" sem o usuário ter que procurar.
+  // "o que eu preciso pagar agora" sem o usuÃ¡rio ter que procurar.
   return result.sort((a, b) => {
     const aPaid = a.status === "PAID" ? 1 : 0;
     const bPaid = b.status === "PAID" ? 1 : 0;
@@ -1445,11 +1413,11 @@ export function getBillsForMonth(month: string): BillInMonth[] {
   });
 }
 
-/** Diferença em dias entre duas datas "YYYY-MM-DD" (b - a). */
+/** DiferenÃ§a em dias entre duas datas "YYYY-MM-DD" (b - a). */
 function daysBetween(a: string, b: string): number {
   const [ay, am, ad] = a.split("-").map(Number);
   const [by, bm, bd] = b.split("-").map(Number);
-  // Date.UTC evita que horário de verão jogue o resultado para 0,96 dia.
+  // Date.UTC evita que horÃ¡rio de verÃ£o jogue o resultado para 0,96 dia.
   const msPerDay = 86_400_000;
   return Math.round(
     (Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / msPerDay,
@@ -1457,23 +1425,23 @@ function daysBetween(a: string, b: string): number {
 }
 
 /**
- * Quita uma conta: cria o lançamento e amarra ao boleto.
- * `amountCents` permite informar o valor real, que em conta variável (luz,
- * cartão) quase nunca é igual ao estimado.
+ * Quita uma conta: cria o lanÃ§amento e amarra ao boleto.
+ * `amountCents` permite informar o valor real, que em conta variÃ¡vel (luz,
+ * cartÃ£o) quase nunca Ã© igual ao estimado.
  */
-export function payBill(input: {
+export async function payBill(input: {
   billId: string;
   amountCents: number;
   date: string;
   accountId?: string | null;
   notes: string | null;
-}): string {
-  const bill = getBill(input.billId);
-  if (!bill) throw new Error("Conta não encontrada");
+}): Promise<string> {
+  const bill = await getBill(input.billId);
+  if (!bill) throw new Error("Conta nÃ£o encontrada");
 
-  const db = getDb();
+  const db = getFinancePgDb();
   const id = newId();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO transactions
        (id, type, amountCents, date, description, nature, notes, categoryId,
         billId, accountId)
@@ -1483,7 +1451,7 @@ export function payBill(input: {
     input.amountCents,
     input.date,
     bill.name,
-    // Conta mensal quitada é custo fixo; boleto avulso é gasto à vista.
+    // Conta mensal quitada Ã© custo fixo; boleto avulso Ã© gasto Ã  vista.
     bill.recurrence === "MONTHLY" ? "FIXO" : "VISTA",
     input.notes,
     bill.categoryId,
@@ -1494,26 +1462,26 @@ export function payBill(input: {
 }
 
 /**
- * Quita um lançamento que estava agendado para o futuro.
+ * Quita um lanÃ§amento que estava agendado para o futuro.
  *
- * ATUALIZA a linha existente em vez de criar outra: o gasto já foi registrado
- * quando você agendou; criar um segundo lançamento na hora de pagar contaria o
+ * ATUALIZA a linha existente em vez de criar outra: o gasto jÃ¡ foi registrado
+ * quando vocÃª agendou; criar um segundo lanÃ§amento na hora de pagar contaria o
  * mesmo dinheiro duas vezes.
  *
- * O que muda é o que só se sabe na hora de pagar: de qual conta saiu, quanto
+ * O que muda Ã© o que sÃ³ se sabe na hora de pagar: de qual conta saiu, quanto
  * saiu de fato e em que dia.
  */
-export function payScheduledTransaction(input: {
+export async function payScheduledTransaction(input: {
   transactionId: string;
   accountId: string;
   amountCents: number;
   date: string;
   method: PaymentMethod | null;
-}): void {
-  const conta = getAccount(input.accountId);
-  if (!conta) throw new Error("Conta não encontrada");
+}): Promise<void> {
+  const conta = await getAccount(input.accountId);
+  if (!conta) throw new Error("Conta nÃ£o encontrada");
 
-  getDb()
+  await getFinancePgDb()
     .prepare(
       `UPDATE transactions
           SET accountId = ?, amountCents = ?, date = ?, method = COALESCE(?, method)
@@ -1528,42 +1496,42 @@ export function payScheduledTransaction(input: {
     );
 }
 
-/** Desfaz o pagamento de uma conta no mês (apaga o lançamento vinculado). */
-export function unpayBill(transactionId: string): void {
-  getDb().prepare(`DELETE FROM transactions WHERE id = ?`).run(transactionId);
+/** Desfaz o pagamento de uma conta no mÃªs (apaga o lanÃ§amento vinculado). */
+export async function unpayBill(transactionId: string): Promise<void> {
+  await getFinancePgDb().prepare(`DELETE FROM transactions WHERE id = ?`).run(transactionId);
 }
 
 /**
- * Total comprometido no mês com contas ainda EM ABERTO.
- * É o número que transforma "sobrou R$ 800" em "sobrou R$ 800, mas R$ 620 já
- * têm dono" — a diferença entre achar que pode gastar e poder de fato.
+ * Total comprometido no mÃªs com contas ainda EM ABERTO.
+ * Ã‰ o nÃºmero que transforma "sobrou R$ 800" em "sobrou R$ 800, mas R$ 620 jÃ¡
+ * tÃªm dono" â€” a diferenÃ§a entre achar que pode gastar e poder de fato.
  */
-export function getOpenBillsTotal(month: string): number {
-  return getBillsForMonth(month)
+export async function getOpenBillsTotal(month: string): Promise<number> {
+  return (await getBillsForMonth(month))
     .filter((b) => b.status !== "PAID")
     .reduce((acc, b) => acc + b.bill.amountCents, 0);
 }
 
 // --------------------------------------------------------------------- metas
 
-export function listGoals(): Goal[] {
-  const rows = getDb()
+export async function listGoals(): Promise<Goal[]> {
+  const rows = await getFinancePgDb()
     .prepare(
       `SELECT id, name, targetCents, savedCents, deadline, archived
          FROM goals WHERE archived = 0 ORDER BY createdAt`,
     )
-    .all() as unknown as Array<Omit<Goal, "archived"> & { archived: number }>;
-  return rows.map((r) => ({ ...r, archived: r.archived === 1 }));
+    .all() as unknown as Array<Omit<Goal, "archived"> & { archived: boolean | number }>;
+  return rows.map((r) => ({ ...r, archived: isTrue(r.archived) }));
 }
 
-export function createGoal(input: {
+export async function createGoal(input: {
   name: string;
   targetCents: number;
   savedCents: number;
   deadline: string | null;
-}): string {
+}): Promise<string> {
   const id = newId();
-  getDb()
+  await getFinancePgDb()
     .prepare(
       `INSERT INTO goals (id, name, targetCents, savedCents, deadline)
        VALUES (?, ?, ?, ?, ?)`,
@@ -1572,32 +1540,32 @@ export function createGoal(input: {
   return id;
 }
 
-export function addToGoal(id: string, cents: number): void {
-  getDb()
+export async function addToGoal(id: string, cents: number): Promise<void> {
+  await getFinancePgDb()
     .prepare(`UPDATE goals SET savedCents = savedCents + ? WHERE id = ?`)
     .run(cents, id);
 }
 
-export function deleteGoal(id: string): void {
-  getDb().prepare(`DELETE FROM goals WHERE id = ?`).run(id);
+export async function deleteGoal(id: string): Promise<void> {
+  await getFinancePgDb().prepare(`DELETE FROM goals WHERE id = ?`).run(id);
 }
 
-// ----------------------------------------------------------------- cenários
+// ----------------------------------------------------------------- cenÃ¡rios
 
-export function listScenarios(): Scenario[] {
-  const rows = getDb()
+export async function listScenarios(): Promise<Scenario[]> {
+  const rows = await getFinancePgDb()
     .prepare(
       `SELECT id, name, initialCents, monthlyCents, months, rateSource,
               ratePercentOfIndex, customAnnualRate, showReal
          FROM scenarios ORDER BY createdAt`,
     )
-    .all() as unknown as Array<Omit<Scenario, "showReal"> & { showReal: number }>;
-  return rows.map((r) => ({ ...r, showReal: r.showReal === 1 }));
+    .all() as unknown as Array<Omit<Scenario, "showReal"> & { showReal: boolean | number }>;
+  return rows.map((r) => ({ ...r, showReal: isTrue(r.showReal) }));
 }
 
-export function createScenario(input: Omit<Scenario, "id">): string {
+export async function createScenario(input: Omit<Scenario, "id">): Promise<string> {
   const id = newId();
-  getDb()
+  await getFinancePgDb()
     .prepare(
       `INSERT INTO scenarios
          (id, name, initialCents, monthlyCents, months, rateSource,
@@ -1613,11 +1581,12 @@ export function createScenario(input: Omit<Scenario, "id">): string {
       input.rateSource,
       input.ratePercentOfIndex,
       input.customAnnualRate,
-      input.showReal ? 1 : 0,
+      input.showReal,
     );
   return id;
 }
 
-export function deleteScenario(id: string): void {
-  getDb().prepare(`DELETE FROM scenarios WHERE id = ?`).run(id);
+export async function deleteScenario(id: string): Promise<void> {
+  await getFinancePgDb().prepare(`DELETE FROM scenarios WHERE id = ?`).run(id);
 }
+

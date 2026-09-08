@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+﻿import { Info } from "lucide-react";
 
 import { ScenarioPlanner } from "@/components/scenario-planner";
 import { Card, CardTitle, PageHeader } from "@/components/ui";
@@ -10,11 +10,11 @@ import { requirePageUser } from "@/lib/auth-http";
 export const dynamic = "force-dynamic";
 
 /**
- * Projeção de investimentos com as taxas reais do Banco Central.
+ * ProjeÃ§Ã£o de investimentos com as taxas reais do Banco Central.
  *
- * O aporte sugerido vem da SOBRA MÉDIA dos últimos meses fechados, não de um
- * número inventado: a projeção só serve para decidir se refletir dinheiro que
- * de fato sobra. É aqui que o módulo de gastos alimenta o de investimento.
+ * O aporte sugerido vem da SOBRA MÃ‰DIA dos Ãºltimos meses fechados, nÃ£o de um
+ * nÃºmero inventado: a projeÃ§Ã£o sÃ³ serve para decidir se refletir dinheiro que
+ * de fato sobra. Ã‰ aqui que o mÃ³dulo de gastos alimenta o de investimento.
  */
 export default async function InvestimentosPage() {
   // Autorizacao por pagina: o layout nao impede o segmento de rodar.
@@ -22,12 +22,12 @@ export default async function InvestimentosPage() {
 
   const rates = await getRates();
   const month = currentMonth();
-  const averageSurplus = getAverageSurplus(month, 3);
+  const averageSurplus = await getAverageSurplus(month, 3);
 
   const poupanca = poupancaAnnualPct(rates.selic.annualPct);
 
-  // Uma taxa desatualizada apresentada como atual, numa ferramenta de decisão
-  // financeira, é pior que nenhuma taxa. A origem sempre aparece na tela.
+  // Uma taxa desatualizada apresentada como atual, numa ferramenta de decisÃ£o
+  // financeira, Ã© pior que nenhuma taxa. A origem sempre aparece na tela.
   const anyStale =
     rates.cdi.source !== "api" ||
     rates.selic.source !== "api" ||
@@ -48,20 +48,20 @@ export default async function InvestimentosPage() {
         <CardTitle
           hint={
             anyFallback
-              ? "estimativa — API do BCB indisponível"
+              ? "estimativa â€” API do BCB indisponÃ­vel"
               : anyStale
                 ? "do cache local"
                 : "ao vivo, Banco Central"
           }
         >
-          Taxas de referência
+          Taxas de referÃªncia
         </CardTitle>
 
         <dl className="grid gap-xl sm:grid-cols-4">
           <RateItem
             label="CDI"
             value={rates.cdi.annualPct}
-            note="usado na maioria dos títulos de renda fixa"
+            note="usado na maioria dos tÃ­tulos de renda fixa"
           />
           <RateItem
             label="Selic"
@@ -69,23 +69,23 @@ export default async function InvestimentosPage() {
             note="meta definida pelo Copom"
           />
           <RateItem
-            label="Poupança"
+            label="PoupanÃ§a"
             value={poupanca}
             note="regra vigente, TR considerada zero"
           />
           <RateItem
             label="IPCA (12m)"
             value={rates.ipca.annualPct}
-            note="inflação acumulada — o que corrói o ganho"
+            note="inflaÃ§Ã£o acumulada â€” o que corrÃ³i o ganho"
           />
         </dl>
 
         {anyFallback ? (
           <p className="mt-xl flex items-start gap-md rounded-control border border-amber-500/40 bg-amber-500/10 p-lg text-xs text-amber-200">
             <Info className="mt-xs size-4 shrink-0" aria-hidden="true" />
-            Não consegui falar com a API do Banco Central e não havia dado em cache.
-            Os números acima são estimativas — trate a projeção como ordem de grandeza,
-            não como precisão.
+            NÃ£o consegui falar com a API do Banco Central e nÃ£o havia dado em cache.
+            Os nÃºmeros acima sÃ£o estimativas â€” trate a projeÃ§Ã£o como ordem de grandeza,
+            nÃ£o como precisÃ£o.
           </p>
         ) : null}
       </Card>
@@ -125,3 +125,4 @@ function RateItem({
     </div>
   );
 }
+

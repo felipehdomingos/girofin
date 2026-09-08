@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getDb } from "./db";
+import { getFinancePgDb } from "./finance-pg-db";
 
 /**
  * Lista de bancos brasileiros, da BrasilAPI (dados do Banco Central).
@@ -66,7 +66,7 @@ interface BrasilApiBank {
  * sempre tem o que mostrar.
  */
 export async function getBanks(): Promise<{ banks: Bank[]; source: "api" | "cache" | "fallback" }> {
-  const cached = readCache();
+  const cached = await readCache();
   if (cached && isFresh(cached.fetchedAt)) {
     return { banks: cached.banks, source: "cache" };
   }
@@ -105,7 +105,7 @@ export async function getBanks(): Promise<{ banks: Bank[]; source: "api" | "cach
 
     if (banks.length === 0) throw new Error("lista vazia");
 
-    writeCache(banks);
+    await writeCache(banks);
     return { banks, source: "api" };
   } catch {
     if (cached) return { banks: cached.banks, source: "cache" };
@@ -143,33 +143,33 @@ function byRelevance(a: Bank, b: Bank): number {
 
 interface CacheRow {
   banks: Bank[];
-  fetchedAt: string;
+  fetchedAt: string | Date;
 }
 
-function readCache(): CacheRow | null {
+async function readCache(): Promise<CacheRow | null> {
   try {
-    const row = getDb()
-      .prepare(`SELECT annualPct, refDate, fetchedAt FROM rate_cache WHERE series = ?`)
+    const row = await getFinancePgDb()
+      .prepare(`SELECT payload, fetchedAt FROM bank_cache WHERE cacheKey = ?`)
       .get(CACHE_KEY) as
-      | { annualPct: number; refDate: string; fetchedAt: string }
+      | { payload: Bank[]; fetchedAt: string | Date }
       | undefined;
     if (!row) return null;
     // Reaproveita a tabela de cache: `refDate` guarda o JSON da lista. Criar
     // uma tabela só para isso seria schema a mais para o mesmo comportamento.
-    return { banks: JSON.parse(row.refDate) as Bank[], fetchedAt: row.fetchedAt };
+    return { banks: row.payload, fetchedAt: row.fetchedAt };
   } catch {
     return null;
   }
 }
 
-function writeCache(banks: Bank[]): void {
+async function writeCache(banks: Bank[]): Promise<void> {
   try {
-    getDb()
+    await getFinancePgDb()
       .prepare(
-        `INSERT INTO rate_cache (series, annualPct, refDate, fetchedAt)
-         VALUES (?, 0, ?, datetime('now'))
-         ON CONFLICT(series) DO UPDATE SET
-           refDate = excluded.refDate, fetchedAt = excluded.fetchedAt`,
+        `INSERT INTO bank_cache (cacheKey, payload, fetchedAt)
+         VALUES (?, ?::jsonb, now())
+         ON CONFLICT(cacheKey) DO UPDATE SET
+           payload = excluded.payload, fetchedAt = excluded.fetchedAt`,
       )
       .run(CACHE_KEY, JSON.stringify(banks));
   } catch {
@@ -177,7 +177,7 @@ function writeCache(banks: Bank[]): void {
   }
 }
 
-function isFresh(fetchedAt: string): boolean {
-  const t = Date.parse(fetchedAt.replace(" ", "T") + "Z");
+function isFresh(fetchedAt: string | Date): boolean {
+  const t = fetchedAt instanceof Date ? fetchedAt.getTime() : Date.parse(fetchedAt);
   return Number.isFinite(t) && Date.now() - t < CACHE_TTL_MS;
 }

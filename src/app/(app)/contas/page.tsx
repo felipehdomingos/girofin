@@ -1,4 +1,4 @@
-import { BillForm } from "@/components/bill-form";
+﻿import { BillForm } from "@/components/bill-form";
 import { BillList } from "@/components/bill-list";
 import { MonthNav } from "@/components/month-nav";
 import { PageHeader, StatCard } from "@/components/ui";
@@ -17,13 +17,13 @@ export default async function ContasPage({
   await requirePageUser();
 
   const params = await searchParams;
-  // O mês vem da URL. Sem isso a tela ficava presa no mês corrente, e uma
-  // fatura que vence no mês seguinte simplesmente não existia para o usuário.
+  // O mÃªs vem da URL. Sem isso a tela ficava presa no mÃªs corrente, e uma
+  // fatura que vence no mÃªs seguinte simplesmente nÃ£o existia para o usuÃ¡rio.
   const month = /^\d{4}-\d{2}$/.test(params.mes ?? "") ? params.mes! : currentMonth();
 
-  const bills = getBillsForMonth(month);
-  const categories = listCategories();
-  const accounts = listAccounts();
+  const bills = await getBillsForMonth(month);
+  const categories = await listCategories();
+  const accounts = await listAccounts();
 
   const pending = bills.filter((b) => b.status !== "PAID");
   const overdue = bills.filter((b) => b.status === "OVERDUE");
@@ -37,7 +37,7 @@ export default async function ContasPage({
     <>
       <PageHeader
         title="Contas a pagar"
-        subtitle="Contas fixas, boletos e faturas de cartão. As contas bancárias ficam em Configurações."
+        subtitle="Contas fixas, boletos e faturas de cartÃ£o. As contas bancÃ¡rias ficam em ConfiguraÃ§Ãµes."
         actions={<MonthNav month={month} basePath="/contas" />}
       />
 
@@ -55,10 +55,10 @@ export default async function ContasPage({
           hint={
             overdue.length === 0
               ? "Nada atrasado"
-              : `${overdue.length} ${overdue.length === 1 ? "conta" : "contas"} — pague hoje`
+              : `${overdue.length} ${overdue.length === 1 ? "conta" : "contas"} â€” pague hoje`
           }
         />
-        <StatCard label="Já pago no mês" cents={paidCents} tone="positive" />
+        <StatCard label="JÃ¡ pago no mÃªs" cents={paidCents} tone="positive" />
       </div>
 
       <div className="mt-xl grid gap-xl lg:grid-cols-[1.5fr_1fr]">
@@ -68,3 +68,4 @@ export default async function ContasPage({
     </>
   );
 }
+

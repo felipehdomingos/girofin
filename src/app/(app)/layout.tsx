@@ -1,4 +1,4 @@
-import { Nav } from "@/components/nav";
+﻿import { Nav } from "@/components/nav";
 import { requirePageUser } from "@/lib/auth-http";
 import { listAccounts } from "@/lib/repo";
 
@@ -9,9 +9,9 @@ export default async function AppLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await requirePageUser();
 
-  // O item "Cartões" só existe depois que há cartão cadastrado — menu com
-  // seção vazia é ruído. Leitura barata: uma consulta de contas por navegação.
-  const hasCards = listAccounts().some((a) => a.kind === "CARTAO");
+  // O item "CartÃµes" sÃ³ existe depois que hÃ¡ cartÃ£o cadastrado â€” menu com
+  // seÃ§Ã£o vazia Ã© ruÃ­do. Leitura barata: uma consulta de contas por navegaÃ§Ã£o.
+  const hasCards = (await listAccounts()).some((a) => a.kind === "CARTAO");
 
   return (
     <>
@@ -19,7 +19,7 @@ export default async function AppLayout({
         href="#conteudo"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:font-semibold focus:text-on-accent"
       >
-        Pular para o conteúdo
+        Pular para o conteÃºdo
       </a>
 
       <div className="lg:flex">
@@ -34,3 +34,4 @@ export default async function AppLayout({
     </>
   );
 }
+

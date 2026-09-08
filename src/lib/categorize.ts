@@ -1,40 +1,40 @@
-import "server-only";
+﻿import "server-only";
 
-import { getDb } from "./db";
+import { getFinancePgDb } from "./finance-pg-db";
 import { parseBRLToCents } from "./money";
 import { today } from "./dates";
 import type { Category, PaymentMethod, TxNature, TxType } from "./types";
 
 /**
- * Categorização automática do lançamento diário.
+ * CategorizaÃ§Ã£o automÃ¡tica do lanÃ§amento diÃ¡rio.
  *
- * Roda 100% local e determinístico — sem chamada a API de IA. Três motivos:
- * lançar gasto é operação de todo dia e não pode depender de rede; extrato
- * financeiro é dado sensível e não precisa sair da máquina; e o mesmo texto
- * tem que cair sempre na mesma categoria, senão o histórico fica incomparável.
+ * Roda 100% local e determinÃ­stico â€” sem chamada a API de IA. TrÃªs motivos:
+ * lanÃ§ar gasto Ã© operaÃ§Ã£o de todo dia e nÃ£o pode depender de rede; extrato
+ * financeiro Ã© dado sensÃ­vel e nÃ£o precisa sair da mÃ¡quina; e o mesmo texto
+ * tem que cair sempre na mesma categoria, senÃ£o o histÃ³rico fica incomparÃ¡vel.
  *
- * O acerto vem de duas fontes: um vocabulário embutido de marcas e termos reais
- * (ver seedRules em db.ts) e as regras APRENDIDAS quando você corrige um palpite.
+ * O acerto vem de duas fontes: um vocabulÃ¡rio embutido de marcas e termos reais
+ * (ver seedRules em db.ts) e as regras APRENDIDAS quando vocÃª corrige um palpite.
  * Corrigir uma vez ensina para sempre.
  */
 
 export interface Guess {
   categoryId: string | null;
-  /** 0-1. Abaixo de 0.5 a UI pede confirmação em vez de assumir. */
+  /** 0-1. Abaixo de 0.5 a UI pede confirmaÃ§Ã£o em vez de assumir. */
   confidence: number;
-  /** Qual palavra disparou o palpite — a UI mostra isso para você poder discordar. */
+  /** Qual palavra disparou o palpite â€” a UI mostra isso para vocÃª poder discordar. */
   matchedKeyword: string | null;
 }
 
 /**
- * Normaliza para comparar: minúsculas, sem acento, sem pontuação.
- * "Padaria São João" e "padaria sao joao" têm que colidir.
+ * Normaliza para comparar: minÃºsculas, sem acento, sem pontuaÃ§Ã£o.
+ * "Padaria SÃ£o JoÃ£o" e "padaria sao joao" tÃªm que colidir.
  */
 export function normalize(text: string): string {
   return text
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -47,11 +47,11 @@ interface RuleRow {
   hits: number;
 }
 
-export function guessCategory(description: string): Guess {
+export async function guessCategory(description: string): Promise<Guess> {
   const text = normalize(description);
   if (!text) return { categoryId: null, confidence: 0, matchedKeyword: null };
 
-  const rules = getDb()
+  const rules = await getFinancePgDb()
     .prepare(`SELECT keyword, categoryId, source, hits FROM category_rules`)
     .all() as unknown as RuleRow[];
 
@@ -62,23 +62,23 @@ export function guessCategory(description: string): Guess {
     let score = 0;
 
     if (text === kw) {
-      score = 1; // texto idêntico à regra
+      score = 1; // texto idÃªntico Ã  regra
     } else if (wordBoundaryRegex(kw).test(text)) {
       // Palavra inteira. Fronteira \b evita que "gas" case dentro de "gastos".
       score = 0.85;
     } else if (kw.length >= 5 && text.includes(kw)) {
-      // Substring só para chaves longas o bastante para não gerar falso positivo.
+      // Substring sÃ³ para chaves longas o bastante para nÃ£o gerar falso positivo.
       score = 0.6;
     } else {
       continue;
     }
 
-    // Regra que você ensinou vale mais que a embutida: ela reflete o SEU vocabulário.
+    // Regra que vocÃª ensinou vale mais que a embutida: ela reflete o SEU vocabulÃ¡rio.
     if (rule.source === "learned") score += 0.1;
-    // Desempate por uso: a que já acertou mais vezes ganha, com teto baixo
-    // para o histórico não sequestrar um match textual melhor.
+    // Desempate por uso: a que jÃ¡ acertou mais vezes ganha, com teto baixo
+    // para o histÃ³rico nÃ£o sequestrar um match textual melhor.
     score += Math.min(rule.hits, 20) * 0.002;
-    // Chave mais longa é mais específica: "mercado livre" ganha de "mercado".
+    // Chave mais longa Ã© mais especÃ­fica: "mercado livre" ganha de "mercado".
     score += kw.length * 0.001;
 
     if (!best || score > best.score) best = { rule, score };
@@ -100,10 +100,10 @@ function escapeRegex(s: string): string {
 /**
  * Cache do regex de palavra inteira, por keyword.
  *
- * `guessCategory` roda uma vez por LINHA do lançamento em lote e o laço percorre
- * a tabela de regras inteira — compilar o mesmo `RegExp` dentro do laço era
- * `linhas × regras` compilações por chamada. As chaves vêm da tabela de regras,
- * que é finita e escrita pelo próprio app, então o mapa não cresce sem controle.
+ * `guessCategory` roda uma vez por LINHA do lanÃ§amento em lote e o laÃ§o percorre
+ * a tabela de regras inteira â€” compilar o mesmo `RegExp` dentro do laÃ§o era
+ * `linhas Ã— regras` compilaÃ§Ãµes por chamada. As chaves vÃªm da tabela de regras,
+ * que Ã© finita e escrita pelo prÃ³prio app, entÃ£o o mapa nÃ£o cresce sem controle.
  */
 const boundaryCache = new Map<string, RegExp>();
 
@@ -117,10 +117,10 @@ function wordBoundaryRegex(keyword: string): RegExp {
 }
 
 /**
- * Aprende com uma correção. Guarda o termo mais informativo da descrição
- * (a palavra mais longa, ignorando ruído) apontando para a categoria certa.
+ * Aprende com uma correÃ§Ã£o. Guarda o termo mais informativo da descriÃ§Ã£o
+ * (a palavra mais longa, ignorando ruÃ­do) apontando para a categoria certa.
  */
-export function learnFromCorrection(description: string, categoryId: string): void {
+export async function learnFromCorrection(description: string, categoryId: string): Promise<void> {
   const text = normalize(description);
   if (!text) return;
 
@@ -136,11 +136,11 @@ export function learnFromCorrection(description: string, categoryId: string): vo
 
   if (!token) return;
 
-  getDb()
+  await getFinancePgDb()
     .prepare(
       `INSERT INTO category_rules (keyword, categoryId, source, hits, updatedAt)
        VALUES (?, ?, 'learned', 1, datetime('now'))
-       ON CONFLICT(keyword) DO UPDATE SET
+       ON CONFLICT(user_id, keyword) DO UPDATE SET
          categoryId = excluded.categoryId,
          source     = 'learned',
          hits       = category_rules.hits + 1,
@@ -149,22 +149,22 @@ export function learnFromCorrection(description: string, categoryId: string): vo
     .run(token, categoryId);
 }
 
-/** Confirma que o palpite estava certo — reforça a regra sem criar nova. */
-export function reinforce(keyword: string): void {
-  getDb()
+/** Confirma que o palpite estava certo â€” reforÃ§a a regra sem criar nova. */
+export async function reinforce(keyword: string): Promise<void> {
+  await getFinancePgDb()
     .prepare(`UPDATE category_rules SET hits = hits + 1 WHERE keyword = ?`)
     .run(keyword);
 }
 
-// ------------------------------------------------------- lançamento em lote
+// ------------------------------------------------------- lanÃ§amento em lote
 
 export interface ParsedEntry {
   description: string;
-  /** Em PARCELADO, é o TOTAL da compra (parcela × número de parcelas). */
+  /** Em PARCELADO, Ã© o TOTAL da compra (parcela Ã— nÃºmero de parcelas). */
   amountCents: number;
   type: TxType;
   nature: TxNature;
-  /** Número de parcelas quando nature === "PARCELADO". */
+  /** NÃºmero de parcelas quando nature === "PARCELADO". */
   installments: number | null;
   /** Forma de pagamento detectada no texto ("pix", "debito"...). */
   method: PaymentMethod | null;
@@ -172,7 +172,7 @@ export interface ParsedEntry {
   categoryName: string | null;
   confidence: number;
   matchedKeyword: string | null;
-  /** Linha original, para você conferir o que foi interpretado. */
+  /** Linha original, para vocÃª conferir o que foi interpretado. */
   raw: string;
 }
 
@@ -180,82 +180,67 @@ export interface ParsedEntry {
  * Interpreta o texto do dia inteiro de uma vez.
  *
  * Aceita o jeito que a pessoa realmente escreve, uma despesa por linha ou
- * separadas por vírgula/ponto-e-vírgula:
+ * separadas por vÃ­rgula/ponto-e-vÃ­rgula:
  *
  *     mercado 152,30
  *     uber 28
  *     ifood 45,90; netflix 39,90
  *     +salario 5400          <- o "+" marca entrada
  *
- * O valor é o último número da linha; o resto é a descrição. Essa ordem é a
- * natural em português ("uber 28"), e aceitar o valor no meio abriria margem
- * para interpretar errado descrições que contêm número ("99 pop 18").
+ * O valor Ã© o Ãºltimo nÃºmero da linha; o resto Ã© a descriÃ§Ã£o. Essa ordem Ã© a
+ * natural em portuguÃªs ("uber 28"), e aceitar o valor no meio abriria margem
+ * para interpretar errado descriÃ§Ãµes que contÃªm nÃºmero ("99 pop 18").
  */
-/** Comprimento máximo de uma linha do lançamento em lote. Ver o filtro abaixo. */
+/** Comprimento mÃ¡ximo de uma linha do lanÃ§amento em lote. Ver o filtro abaixo. */
 const MAX_LINE_CHARS = 400;
 
-export function parseBulk(input: string, categories: Category[]): ParsedEntry[] {
+export async function parseBulk(input: string, categories: Category[]): Promise<ParsedEntry[]> {
   const byId = new Map(categories.map((c) => [c.id, c]));
-
-  return input
+  const lines = input
     .split(/[\n;]+/)
     .map((line) => line.trim())
     .filter(Boolean)
-    /*
-     * Linha absurdamente longa é descartada antes dos regexes de valor e
-     * parcela, que fazem backtracking quadrático no comprimento da linha. Uma
-     * linha de "descrição valor" real não chega perto disso — o teto só existe
-     * para o texto colado de propósito para queimar CPU.
-     */
     .filter((line) => line.length <= MAX_LINE_CHARS)
-    .flatMap((line) => splitOnCommaIfSafe(line))
-    .map((raw): ParsedEntry | null => {
-      const line = raw.trim();
-      if (!line) return null;
+    .flatMap((line) => splitOnCommaIfSafe(line));
 
-      // "+" no início marca entrada. Sem isso, tudo é saída — que é o caso comum.
-      const isIncome = line.startsWith("+");
-      const body = isIncome ? line.slice(1).trim() : line;
-
-      const semMetodo = extractMethod(body);
-      const parcelado = extractInstallments(semMetodo.description);
-      if (!parcelado) return null;
-
-      const { description, amountCents, installments } = parcelado;
-      if (!description) return null;
-
-      const guess = guessCategory(description);
-      const category = guess.categoryId ? byId.get(guess.categoryId) : undefined;
-
-      return {
-        description,
-        amountCents,
-        type: isIncome ? "INCOME" : "EXPENSE",
-        nature: installments ? "PARCELADO" : "VISTA",
-        installments,
-        method: semMetodo.method,
-        categoryId: guess.categoryId,
-        categoryName: category?.name ?? null,
-        confidence: guess.confidence,
-        matchedKeyword: guess.matchedKeyword,
-        raw: line,
-      };
-    })
-    .filter((e): e is ParsedEntry => e !== null);
+  const entries = await Promise.all(lines.map(async (raw): Promise<ParsedEntry | null> => {
+    const line = raw.trim();
+    if (!line) return null;
+    const isIncome = line.startsWith('+');
+    const body = isIncome ? line.slice(1).trim() : line;
+    const semMetodo = extractMethod(body);
+    const parcelado = extractInstallments(semMetodo.description);
+    if (!parcelado || !parcelado.description) return null;
+    const guess = await guessCategory(parcelado.description);
+    const category = guess.categoryId ? byId.get(guess.categoryId) : undefined;
+    return {
+      description: parcelado.description,
+      amountCents: parcelado.amountCents,
+      type: isIncome ? 'INCOME' : 'EXPENSE',
+      nature: parcelado.installments ? 'PARCELADO' : 'VISTA',
+      installments: parcelado.installments,
+      method: semMetodo.method,
+      categoryId: guess.categoryId,
+      categoryName: category?.name ?? null,
+      confidence: guess.confidence,
+      matchedKeyword: guess.matchedKeyword,
+      raw: line,
+    };
+  }));
+  return entries.filter((entry): entry is ParsedEntry => entry !== null);
 }
-
 /**
- * Extrai descrição, valor e número de parcelas de uma linha.
+ * Extrai descriÃ§Ã£o, valor e nÃºmero de parcelas de uma linha.
  *
  * As duas formas que as pessoas escrevem de fato, ambas aceitas porque a
- * posição do "Nx" já desfaz a ambiguidade sozinha:
+ * posiÃ§Ã£o do "Nx" jÃ¡ desfaz a ambiguidade sozinha:
  *
- *   "tenis 380 4x"   -> 380 é o TOTAL, dividido em 4 (parcelas de 95)
- *   "tenis 4x 95"    -> 95 é a PARCELA, total 380
- *   "tenis 380"      -> à vista
+ *   "tenis 380 4x"   -> 380 Ã© o TOTAL, dividido em 4 (parcelas de 95)
+ *   "tenis 4x 95"    -> 95 Ã© a PARCELA, total 380
+ *   "tenis 380"      -> Ã  vista
  *
- * A regra é posicional: "Nx" DEPOIS do valor lê o valor como total; "Nx" ANTES
- * do valor lê como "N vezes de". É como se fala — "380 em 4x" x "4x de 95".
+ * A regra Ã© posicional: "Nx" DEPOIS do valor lÃª o valor como total; "Nx" ANTES
+ * do valor lÃª como "N vezes de". Ã‰ como se fala â€” "380 em 4x" x "4x de 95".
  */
 function extractInstallments(body: string): {
   description: string;
@@ -276,7 +261,7 @@ function extractInstallments(body: string): {
     }
   }
 
-  // Forma 2: "<desc> <N>x <valor>"  (o valor é o da parcela)
+  // Forma 2: "<desc> <N>x <valor>"  (o valor Ã© o da parcela)
   const partsFirst = body.match(/^(.*?)\s*(\d{1,2})\s*x\s*(?:de\s*)?([\d.,]+)\s*$/i);
   if (partsFirst) {
     const perPart = parseBRLToCents(partsFirst[3]);
@@ -284,14 +269,14 @@ function extractInstallments(body: string): {
     if (perPart !== null && perPart > 0 && parts >= 2) {
       return {
         description: cleanDescription(partsFirst[1]),
-        // O resto do sistema só lida com o total da compra.
+        // O resto do sistema sÃ³ lida com o total da compra.
         amountCents: perPart * parts,
         installments: parts,
       };
     }
   }
 
-  // À vista: o valor é o último número da linha.
+  // Ã€ vista: o valor Ã© o Ãºltimo nÃºmero da linha.
   const plain = body.match(/(-?[\d.,]+)\s*$/);
   if (!plain) return null;
 
@@ -306,27 +291,27 @@ function extractInstallments(body: string): {
 }
 
 function cleanDescription(text: string): string {
-  return text.replace(/[-–—:]\s*$/, "").trim();
+  return text.replace(/[-â€“â€”:]\s*$/, "").trim();
 }
 
 /**
  * Palavras que indicam a forma de pagamento no texto livre.
- * Escrever "mercado 152,30 pix" é mais rápido que abrir um select — e é como
+ * Escrever "mercado 152,30 pix" Ã© mais rÃ¡pido que abrir um select â€” e Ã© como
  * a pessoa fala.
  */
 const METHOD_WORDS: Array<[RegExp, PaymentMethod]> = [
   [/\bpix\b/i, "PIX"],
-  [/\b(debito|débito|deb)\b/i, "DEBITO"],
-  [/\b(credito|crédito|cred|cartao|cartão)\b/i, "CREDITO"],
-  [/\b(dinheiro|especie|espécie|cash)\b/i, "DINHEIRO"],
+  [/\b(debito|dÃ©bito|deb)\b/i, "DEBITO"],
+  [/\b(credito|crÃ©dito|cred|cartao|cartÃ£o)\b/i, "CREDITO"],
+  [/\b(dinheiro|especie|espÃ©cie|cash)\b/i, "DINHEIRO"],
   [/\bboleto\b/i, "BOLETO"],
-  [/\b(transferencia|transferência|ted|doc)\b/i, "TRANSFERENCIA"],
+  [/\b(transferencia|transferÃªncia|ted|doc)\b/i, "TRANSFERENCIA"],
 ];
 
 /**
- * Extrai a forma de pagamento e a REMOVE da descrição.
+ * Extrai a forma de pagamento e a REMOVE da descriÃ§Ã£o.
  *
- * Deixar a palavra na descrição estragaria duas coisas: o histórico ficaria
+ * Deixar a palavra na descriÃ§Ã£o estragaria duas coisas: o histÃ³rico ficaria
  * cheio de "mercado pix" em vez de "mercado", e o categorizador aprenderia
  * "pix" como se fosse nome de estabelecimento.
  */
@@ -343,9 +328,9 @@ function extractMethod(text: string): {
 }
 
 /**
- * Vírgula é ambígua em português: separa itens ("uber 28, ifood 45") e também
- * é o decimal ("28,50"). Só quebramos quando os dois lados têm letra — o que
- * indica descrições distintas, não um número partido ao meio.
+ * VÃ­rgula Ã© ambÃ­gua em portuguÃªs: separa itens ("uber 28, ifood 45") e tambÃ©m
+ * Ã© o decimal ("28,50"). SÃ³ quebramos quando os dois lados tÃªm letra â€” o que
+ * indica descriÃ§Ãµes distintas, nÃ£o um nÃºmero partido ao meio.
  */
 function splitOnCommaIfSafe(line: string): string[] {
   if (!line.includes(",")) return [line];
@@ -358,7 +343,7 @@ function splitOnCommaIfSafe(line: string): string[] {
     if (ch === ",") {
       const before = line[i - 1];
       const after = line[i + 1];
-      // dígito,dígito => decimal, mantém junto
+      // dÃ­gito,dÃ­gito => decimal, mantÃ©m junto
       if (/\d/.test(before ?? "") && /\d/.test(after ?? "")) {
         current += ch;
         continue;
@@ -374,7 +359,8 @@ function splitOnCommaIfSafe(line: string): string[] {
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 
-/** Data padrão de um lançamento rápido: hoje. */
+/** Data padrÃ£o de um lanÃ§amento rÃ¡pido: hoje. */
 export function defaultEntryDate(): string {
   return today();
 }
+

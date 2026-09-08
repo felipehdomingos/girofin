@@ -1,45 +1,52 @@
-/**
- * Bootstrap dos testes.
- *
- * `server-only` é um pacote que existe só para EXPLODIR quando importado do
- * lugar errado — é a proteção que impede o código de banco vazar para o
- * bundle do cliente. Fora do runtime do Next ele não sabe distinguir "cliente"
- * de "script de teste" e explode do mesmo jeito.
- *
- * A saída é registrar um módulo vazio no cache do require ANTES de carregar o
- * teste: quando categorize.js pedir "server-only", recebe o stub e segue. Nada
- * do código de produção muda para o teste rodar.
- */
-const resolved = require.resolve("server-only");
-require.cache[resolved] = {
-  id: resolved,
-  filename: resolved,
-  loaded: true,
-  exports: {},
-  children: [],
-  paths: [],
-};
-
-/*
- * Banco próprio para os testes, longe do seu.
- *
- * O teste da fatura CRIA contas e lançamentos. Rodando contra data/financeiro.db
- * ele encheria seu banco real de "Cartao teste" a cada execução.
- */
-const path = require("node:path");
+const { Client } = require("pg");
+const { randomUUID } = require("node:crypto");
 const fs = require("node:fs");
-const dbTeste = path.join(__dirname, "..", ".test-build", "teste.db");
-for (const sufixo of ["", "-wal", "-shm"]) {
-  fs.rmSync(dbTeste + sufixo, { force: true });
-}
-process.env.FINANCEIRO_DB = dbTeste;
+const path = require("node:path");
 
-require("../.test-build/scripts/test-lib.js");
-// Ciclo da fatura do cartão: compra -> aparece em Contas a pagar -> pagamento
-// como transferência, sem contar duas vezes no mês.
-require("../.test-build/scripts/test-fatura.js");
-// Leitura de fatura de cartão: texto -> lançamentos, sem depender de PDF.
-require("../.test-build/scripts/test-invoice.js");
-// Um mês inteiro de uso real: salário, gastos do dia, conta fixa, cartão,
-// estorno e boleto agendado — tudo tem que fechar no saldo no fim.
-require("../.test-build/scripts/test-amarracao.js");
+if (!process.env.DATABASE_URL) {
+  throw new Error("npm test exige DATABASE_URL apontando para um PostgreSQL de teste.");
+}
+
+async function main() {
+  // Os testes executam a lógica de servidor diretamente no Node, fora do
+  // bundler do Next. Nesse contexto, `server-only` é apenas uma salvaguarda
+  // de build e precisa ser neutralizado explicitamente.
+  require.cache[require.resolve("server-only")] = { exports: {} };
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_SSL === "false" ? false : { rejectUnauthorized: false },
+  });
+  const userId = randomUUID();
+  await client.connect();
+  try {
+    await client.query(fs.readFileSync(path.join(__dirname, "..", "db", "postgres-schema.sql"), "utf8"));
+    await client.query(
+      "INSERT INTO app_users (id, email, password_hash, name) VALUES ($1, $2, $3, $4)",
+      [userId, `test-${userId}@invalid.local`, "test-only", "Test Runner"],
+    );
+    process.env.AUTH_SECRET = process.env.AUTH_SECRET || "test-only-secret";
+    const { setFinanceUserContext } = require("../.test-build/src/lib/db.js");
+    setFinanceUserContext(userId);
+    const { ensureFinanceSeedData } = require("../.test-build/src/lib/finance-pg-db.js");
+    await ensureFinanceSeedData();
+    const testFiles = [
+      "test-lib.js",
+      "test-fatura.js",
+      "test-invoice.js",
+      "test-amarracao.js",
+    ];
+    for (const file of testFiles) {
+      globalThis.__testPromises = [];
+      require(`../.test-build/scripts/${file}`);
+      await Promise.all(globalThis.__testPromises);
+    }
+  } finally {
+    await client.query("DELETE FROM app_users WHERE id = $1", [userId]);
+    await client.end();
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.stack || error.message : error);
+  process.exitCode = 1;
+});
