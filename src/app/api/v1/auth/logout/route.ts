@@ -11,12 +11,26 @@ export async function POST(request: Request) {
     const user = await currentApiUser(request);
     const authorization = request.headers.get("authorization");
     if (user && authorization?.startsWith("Bearer ")) {
-      await revokeAllSessions(user.id);
+      // Escopo mobile: não derruba a sessão do navegador do mesmo usuário.
+      await revokeAllSessions(user.id, "mobile");
       await deleteSession(authorization.slice(7).trim());
     }
     const rawBody = await request.text();
     if (rawBody) {
-      const body = JSON.parse(rawBody) as { refreshToken?: unknown };
+      /*
+       * Corpo malformado é erro de quem chamou, não do serviço: sem este try o
+       * `JSON.parse` estourava até o catch de fora e virava 503, dizendo que a
+       * autenticação estava indisponível quando não estava.
+       */
+      let body: { refreshToken?: unknown };
+      try {
+        body = JSON.parse(rawBody) as { refreshToken?: unknown };
+      } catch {
+        // Mesmo recusando o corpo, a sessão do navegador é encerrada: sair
+        // nunca pode falhar pela metade e deixar o cookie vivo.
+        await clearAuthSession();
+        return apiError(400, "INVALID_BODY", "Corpo da requisicao invalido.");
+      }
       if (typeof body.refreshToken === "string") {
         await revokeMobileRefreshToken(body.refreshToken);
       }

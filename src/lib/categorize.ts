@@ -63,7 +63,7 @@ export function guessCategory(description: string): Guess {
 
     if (text === kw) {
       score = 1; // texto idêntico à regra
-    } else if (new RegExp(`\\b${escapeRegex(kw)}\\b`).test(text)) {
+    } else if (wordBoundaryRegex(kw).test(text)) {
       // Palavra inteira. Fronteira \b evita que "gas" case dentro de "gastos".
       score = 0.85;
     } else if (kw.length >= 5 && text.includes(kw)) {
@@ -95,6 +95,25 @@ export function guessCategory(description: string): Guess {
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Cache do regex de palavra inteira, por keyword.
+ *
+ * `guessCategory` roda uma vez por LINHA do lançamento em lote e o laço percorre
+ * a tabela de regras inteira — compilar o mesmo `RegExp` dentro do laço era
+ * `linhas × regras` compilações por chamada. As chaves vêm da tabela de regras,
+ * que é finita e escrita pelo próprio app, então o mapa não cresce sem controle.
+ */
+const boundaryCache = new Map<string, RegExp>();
+
+function wordBoundaryRegex(keyword: string): RegExp {
+  let regex = boundaryCache.get(keyword);
+  if (!regex) {
+    regex = new RegExp(`\\b${escapeRegex(keyword)}\\b`);
+    boundaryCache.set(keyword, regex);
+  }
+  return regex;
 }
 
 /**
@@ -172,6 +191,9 @@ export interface ParsedEntry {
  * natural em português ("uber 28"), e aceitar o valor no meio abriria margem
  * para interpretar errado descrições que contêm número ("99 pop 18").
  */
+/** Comprimento máximo de uma linha do lançamento em lote. Ver o filtro abaixo. */
+const MAX_LINE_CHARS = 400;
+
 export function parseBulk(input: string, categories: Category[]): ParsedEntry[] {
   const byId = new Map(categories.map((c) => [c.id, c]));
 
@@ -179,6 +201,13 @@ export function parseBulk(input: string, categories: Category[]): ParsedEntry[] 
     .split(/[\n;]+/)
     .map((line) => line.trim())
     .filter(Boolean)
+    /*
+     * Linha absurdamente longa é descartada antes dos regexes de valor e
+     * parcela, que fazem backtracking quadrático no comprimento da linha. Uma
+     * linha de "descrição valor" real não chega perto disso — o teto só existe
+     * para o texto colado de propósito para queimar CPU.
+     */
+    .filter((line) => line.length <= MAX_LINE_CHARS)
     .flatMap((line) => splitOnCommaIfSafe(line))
     .map((raw): ParsedEntry | null => {
       const line = raw.trim();

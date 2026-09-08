@@ -13,6 +13,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import {
+  addMonthsToDate,
   currentMonth,
   daysInRange,
   formatRange,
@@ -33,8 +34,12 @@ import {
   listTransactionsInRange,
 } from "@/lib/repo";
 import { KIND_LABEL, KIND_TARGET, METHOD_LABEL, type CategoryKind } from "@/lib/types";
+import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
+
+/** Amplitude máxima do período customizado, em meses (5 anos). */
+const MAX_RANGE_MONTHS = 60;
 
 /**
  * Relatórios por período: semana, mês, ano ou intervalo customizado.
@@ -49,6 +54,9 @@ export default async function RelatoriosPage({
 }: {
   searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
 }) {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const params = await searchParams;
   const hoje = today();
 
@@ -68,6 +76,15 @@ export default async function RelatoriosPage({
     end = params.ate!;
     // Intervalo invertido viraria consulta vazia sem explicação: corrige na entrada.
     if (start > end) [start, end] = [end, start];
+    /*
+     * Teto de amplitude. Só o FORMATO da data era validado, então "0001-01-01"
+     * a "9999-12-31" passava — e `getRangeSeries` monta uma chave por mês do
+     * intervalo, com trabalho proporcional à distância entre as duas datas. Uma
+     * URL montada à mão travava a renderização da página. Cinco anos cobre
+     * qualquer recorte que um app de finanças pessoais precise mostrar.
+     */
+    const limite = addMonthsToDate(start, MAX_RANGE_MONTHS);
+    if (end > limite) end = limite;
   } else {
     ({ start, end } = monthBounds(currentMonth()));
   }

@@ -33,7 +33,7 @@ import {
   listTransactions,
 } from "@/lib/repo";
 import { KIND_LABEL, KIND_TARGET, type CategoryKind } from "@/lib/types";
-import { currentUser } from "@/lib/auth-http";
+import { currentUser, requirePageUser } from "@/lib/auth-http";
 
 /**
  * Resumo do mês — a tela que responde "como eu estou?" em cinco segundos.
@@ -46,6 +46,9 @@ import { currentUser } from "@/lib/auth-http";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const user = await currentUser();
   const month = currentMonth();
   const summary = getMonthSummary(month);

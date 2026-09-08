@@ -5,6 +5,7 @@ import { Card, CardTitle, PageHeader } from "@/components/ui";
 import { getRates, poupancaAnnualPct } from "@/lib/bcb";
 import { currentMonth } from "@/lib/dates";
 import { getAverageSurplus } from "@/lib/repo";
+import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,9 @@ export const dynamic = "force-dynamic";
  * de fato sobra. É aqui que o módulo de gastos alimenta o de investimento.
  */
 export default async function InvestimentosPage() {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const rates = await getRates();
   const month = currentMonth();
   const averageSurplus = getAverageSurplus(month, 3);

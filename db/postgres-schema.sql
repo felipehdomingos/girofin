@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS app_users (
   avatar_data_url TEXT,
   google_subject TEXT UNIQUE,
   email_verified_at TIMESTAMPTZ,
+  -- Janela de emissao de codigo de confirmacao, por usuario. Fica aqui, e nao
+  -- na tabela de tokens (apagada a cada emissao), para nao ser zeravel de fora.
+  email_verification_sends INTEGER NOT NULL DEFAULT 0,
+  email_verification_window_start TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

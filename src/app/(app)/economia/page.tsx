@@ -21,6 +21,7 @@ import {
   getTotalSavedAllTime,
   listGoals,
 } from "@/lib/repo";
+import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,9 @@ export const dynamic = "force-dynamic";
  * Cada conselho traz um número e um passo — sem isso é horóscopo financeiro.
  */
 export default async function EconomiaPage() {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const month = currentMonth();
   const summary = getMonthSummary(month);
   const previous = getMonthSummary(addMonths(month, -1));

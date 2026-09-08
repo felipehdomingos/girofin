@@ -552,9 +552,17 @@ export function getRangeSeries(
     }
   }
 
+  /*
+   * Índice por chave+tipo. Antes eram dois `rows.find()` lineares POR bucket —
+   * O(chaves × linhas) só para casar dado que já veio agrupado do SQL. Com
+   * intervalo longo isso dominava o tempo da página.
+   */
+  const porChave = new Map<string, number>();
+  for (const r of rows) porChave.set(`${r.chave}:${r.type}`, r.total);
+
   const pontos = chaves.map((chave) => {
-    const inc = rows.find((r) => r.chave === chave && r.type === "INCOME")?.total ?? 0;
-    const exp = rows.find((r) => r.chave === chave && r.type === "EXPENSE")?.total ?? 0;
+    const inc = porChave.get(`${chave}:INCOME`) ?? 0;
+    const exp = porChave.get(`${chave}:EXPENSE`) ?? 0;
     return {
       label: bucket === "dia" ? formatDayMonth(chave) : formatMonth(chave),
       incomeCents: inc,

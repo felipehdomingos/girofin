@@ -18,6 +18,9 @@ const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
 const RESET_TTL_SECONDS = 60 * 60;
 const EMAIL_VERIFICATION_TTL_SECONDS = 60 * 10;
 const MAX_VERIFICATION_ATTEMPTS = 5;
+/** Quantos códigos um MESMO usuário pode receber por janela. Ver createEmailVerification. */
+const MAX_VERIFICATION_SENDS_PER_WINDOW = 3;
+const EMAIL_VERIFICATION_WINDOW_SECONDS = 60 * 60;
 
 let pool: Pool | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -127,8 +130,27 @@ export async function ensureAuthSchema(): Promise<void> {
         -- adivinhável por força bruta.
         ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
         CREATE INDEX IF NOT EXISTS email_verification_user_idx ON email_verification_tokens(user_id);
+        -- Janela de emissão de código POR USUÁRIO, no próprio app_users.
+        -- O contador de tentativas vive na linha do token, que
+        -- createEmailVerification apaga a cada emissão — ou seja, era zerável
+        -- de fora por qualquer POST em /register ou /resend-verification.
+        -- Limitando quantos códigos um usuário recebe por hora, o contador só
+        -- pode ser zerado esse número de vezes, e o mesmo limite impede usar a
+        -- rota como mail-bomb contra o dono do endereço.
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verification_sends INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verification_window_start TIMESTAMPTZ;
       `)
-      .then(() => undefined);
+      .then(() => undefined)
+      /*
+       * Sem isto, a promessa REJEITADA ficava memoizada: um Postgres fora do ar
+       * no primeiro acesso derrubava toda a autenticação até o processo
+       * reiniciar, mesmo com o banco de volta. Limpar o cache faz a próxima
+       * chamada tentar de novo.
+       */
+      .catch((error: unknown) => {
+        schemaReady = null;
+        throw error;
+      });
   }
   await schemaReady;
 }
@@ -552,21 +574,78 @@ export async function createPasswordReset(
   return { token, name: user.name, email: user.email };
 }
 
-export async function createEmailVerification(userId: string): Promise<{ code: string; email: string; name: string }> {
+/**
+ * Emite um código de confirmação — respeitando o teto por usuário.
+ *
+ * Devolve `null` quando o usuário já recebeu códigos demais na janela. Quem
+ * chama trata isso como "não enviei" e responde a mesma coisa de sempre: o
+ * limite não pode virar oráculo de enumeração.
+ *
+ * O teto existe por dois motivos. Primeiro, esta função apaga o código anterior
+ * e insere um com `attempts = 0` — sem limite, qualquer um zerava o contador
+ * anti-força-bruta do código de 6 dígitos à vontade, por uma rota que só
+ * limitava por IP (trocável). Com no máximo `MAX_VERIFICATION_SENDS_PER_WINDOW`
+ * emissões por hora, o atacante tem 15 palpites por hora dentro de 900 mil
+ * possibilidades. Segundo, quem dispara o envio escolhe o destinatário e o
+ * volume: sem teto por usuário, a rota é mail-bomb contra o dono do endereço e
+ * queima de cota do provedor de e-mail.
+ *
+ * A janela mora em `app_users` (e não na tabela de tokens, que é apagada a cada
+ * emissão) justamente para não ser zerável de fora.
+ */
+export async function createEmailVerification(
+  userId: string,
+): Promise<{ code: string; email: string; name: string } | null> {
   await ensureAuthSchema();
-  const user = await getPool().query<{ email: string; name: string }>(
-    `SELECT email, name FROM app_users WHERE id = $1`,
-    [userId],
-  );
-  if (!user.rows[0]) throw new Error("USER_NOT_FOUND");
-  const code = String(randomInt(100000, 1000000));
-  await getPool().query(`DELETE FROM email_verification_tokens WHERE user_id = $1 AND used_at IS NULL`, [userId]);
-  await getPool().query(
-    `INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at)
-     VALUES ($1, $2, $3, now() + ($4 * interval '1 second'))`,
-    [randomUUID(), userId, digest(`${user.rows[0].email}:${code}`), EMAIL_VERIFICATION_TTL_SECONDS],
-  );
-  return { code, email: user.rows[0].email, name: user.rows[0].name };
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+
+    const user = await client.query<{ email: string; name: string; sends: number }>(
+      `UPDATE app_users
+          SET email_verification_window_start = CASE
+                WHEN email_verification_window_start IS NULL
+                  OR email_verification_window_start < now() - ($2 * interval '1 second')
+                THEN now() ELSE email_verification_window_start END,
+              email_verification_sends = CASE
+                WHEN email_verification_window_start IS NULL
+                  OR email_verification_window_start < now() - ($2 * interval '1 second')
+                THEN 1 ELSE email_verification_sends + 1 END
+        WHERE id = $1
+        RETURNING email, name, email_verification_sends AS sends`,
+      [userId, EMAIL_VERIFICATION_WINDOW_SECONDS],
+    );
+    const row = user.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      throw new Error("USER_NOT_FOUND");
+    }
+
+    if (row.sends > MAX_VERIFICATION_SENDS_PER_WINDOW) {
+      // Desfaz o incremento: o balde fica cheio até a janela virar, em vez de
+      // empurrar o início da janela para frente a cada tentativa recusada.
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const code = String(randomInt(100000, 1000000));
+    await client.query(
+      `DELETE FROM email_verification_tokens WHERE user_id = $1 AND used_at IS NULL`,
+      [userId],
+    );
+    await client.query(
+      `INSERT INTO email_verification_tokens (id, user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, now() + ($4 * interval '1 second'))`,
+      [randomUUID(), userId, digest(`${row.email}:${code}`), EMAIL_VERIFICATION_TTL_SECONDS],
+    );
+    await client.query("COMMIT");
+    return { code, email: row.email, name: row.name };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -695,6 +774,20 @@ export async function resetPassword(token: string, password: string): Promise<bo
       row.id,
     ]);
     await client.query(`DELETE FROM app_sessions WHERE user_id = $1`, [row.user_id]);
+    /*
+     * Trocar a senha tem que expulsar o invasor, e apagar `app_sessions`
+     * sozinho não fazia isso: o refresh token do app vale 30 dias e vive em
+     * outra tabela. Quem trocasse a senha suspeitando de invasão continuava com
+     * o atacante dentro, porque `rotateMobileSession` emite access token novo a
+     * cada 15 minutos a partir do refresh roubado.
+     *
+     * Na MESMA transação de propósito: se a revogação falhasse depois do commit
+     * da senha, a conta ficaria com senha nova e sessão móvel antiga viva.
+     */
+    await client.query(
+      `UPDATE app_refresh_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE user_id = $1`,
+      [row.user_id],
+    );
     await client.query("COMMIT");
     return true;
   } catch (error) {

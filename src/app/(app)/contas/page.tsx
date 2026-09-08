@@ -4,6 +4,7 @@ import { MonthNav } from "@/components/month-nav";
 import { PageHeader, StatCard } from "@/components/ui";
 import { currentMonth, today } from "@/lib/dates";
 import { getBillsForMonth, listAccounts, listCategories } from "@/lib/repo";
+import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,9 @@ export default async function ContasPage({
 }: {
   searchParams: Promise<{ mes?: string }>;
 }) {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const params = await searchParams;
   // O mês vem da URL. Sem isso a tela ficava presa no mês corrente, e uma
   // fatura que vence no mês seguinte simplesmente não existia para o usuário.

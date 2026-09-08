@@ -3,7 +3,7 @@ import { getBanks } from "@/lib/banks";
 import { PageHeader } from "@/components/ui";
 import { currentMonth } from "@/lib/dates";
 import { VIZ_PALETTE } from "@/lib/palette";
-import { currentUser } from "@/lib/auth-http";
+import { currentUser, requirePageUser } from "@/lib/auth-http";
 import {
   getMonthSummary,
   listAccountsWithBalance,
@@ -18,6 +18,9 @@ export const dynamic = "force-dynamic";
  * Tudo que se cadastra uma vez e se usa o resto do tempo mora aqui.
  */
 export default async function ConfiguracoesPage() {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const user = await currentUser();
   const month = currentMonth();
   const accounts = listAccountsWithBalance(month);

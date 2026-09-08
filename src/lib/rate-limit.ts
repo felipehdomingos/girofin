@@ -10,8 +10,9 @@ import "server-only";
  * a mesma interface.
  *
  * Não substitui o contador de tentativas do código de confirmação, que vive no
- * banco (`email_verification_tokens.attempts`) justamente para sobreviver a
- * reinício de processo e a troca de IP.
+ * banco (`email_verification_tokens.attempts`) nem o teto de emissões por
+ * usuário (`app_users.email_verification_sends`) — os dois estão no Postgres
+ * justamente para sobreviver a reinício de processo e a troca de IP.
  */
 
 interface Bucket {
@@ -21,11 +22,40 @@ interface Bucket {
 
 const hits = new Map<string, Bucket>();
 
-/** Evita que o Map cresça sem limite com chaves de janelas já vencidas. */
-function sweep(now: number): void {
-  if (hits.size < 10_000) return;
+/**
+ * Teto rígido de baldes vivos, e quantos são descartados quando ele é atingido.
+ *
+ * O `sweep` antigo só removia balde VENCIDO. Com janelas de uma hora e chave
+ * nova a cada requisição (o que era trivial antes da correção do `clientIp`), o
+ * mapa enchia de entradas todas vigentes: a varredura não apagava nada e rodava
+ * inteira a cada chave nova — O(N²) de CPU num processo single-threaded, a
+ * partir de endpoint não autenticado.
+ */
+const MAX_BUCKETS = 20_000;
+const EVICTION_BATCH = 2_000;
+
+/**
+ * Garante espaço antes de inserir. Roda só quando o mapa está cheio e, quando
+ * roda, libera um lote inteiro — assim a varredura O(N) é amortizada em
+ * `EVICTION_BATCH` inserções, em vez de acontecer a cada uma.
+ *
+ * O descarte é por ordem de inserção (o Map preserva). Descartar balde vigente
+ * perdoa o contador de quem foi despejado, mas o alvo do despejo são as chaves
+ * MAIS ANTIGAS — e o limitador de memória existe justamente para o caso em que
+ * a alternativa é o processo cair.
+ */
+function makeRoom(now: number): void {
+  if (hits.size < MAX_BUCKETS) return;
+
   for (const [key, bucket] of hits) {
     if (bucket.resetAt < now) hits.delete(key);
+  }
+  if (hits.size < MAX_BUCKETS) return;
+
+  let restantes = EVICTION_BATCH;
+  for (const key of hits.keys()) {
+    hits.delete(key);
+    if (--restantes <= 0) break;
   }
 }
 
@@ -37,7 +67,7 @@ export function rateLimit(key: string, limit: number, windowSeconds: number): bo
   const bucket = hits.get(key);
 
   if (!bucket || bucket.resetAt < now) {
-    sweep(now);
+    makeRoom(now);
     hits.set(key, { count: 1, resetAt: now + windowSeconds * 1000 });
     return true;
   }
@@ -47,18 +77,49 @@ export function rateLimit(key: string, limit: number, windowSeconds: number): bo
   return true;
 }
 
+/** Devolve o balde ao estado zerado. Ver `clearRateLimits`. */
+export function clearRateLimit(key: string): void {
+  hits.delete(key);
+}
+
 /**
- * IP do cliente. Atrás do App Service a origem real vem em `x-forwarded-for`;
- * o primeiro item é o cliente e o resto são os proxies do caminho.
+ * IP do cliente, a partir do ÚLTIMO elemento de `x-forwarded-for`.
  *
- * O cabeçalho é falsificável por quem fala direto com a aplicação, então isto
- * sozinho não é defesa — por isso todo endpoint aqui limita também pela conta
- * alvo, que o atacante não escolhe livremente.
+ * Isso depende da plataforma: o alvo do deploy é o Azure App Service, que
+ * ACRESCENTA o IP real ao final da cadeia — logo o último item é o único hop
+ * que a plataforma escreveu, e os anteriores vieram do cliente. Lendo o
+ * PRIMEIRO, como antes, bastava mandar `X-Forwarded-For: <aleatório>` para ter
+ * chave nova a cada requisição: `loginIp`, `registerIp`, `resetIp`, `verifyIp` e
+ * `refreshIp` deixavam de existir como limite.
+ *
+ * Atrás de outro proxy (nginx, Cloudflare) a convenção pode ser a oposta — se o
+ * deploy mudar, este é o ponto a revisar.
  */
 export function clientIp(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  return request.headers.get("x-real-ip")?.trim() || "desconhecido";
+  if (forwarded) {
+    const hops = forwarded.split(",").map((hop) => hop.trim()).filter(Boolean);
+    const last = hops[hops.length - 1];
+    if (last) return stripPort(last);
+  }
+  return stripPort(request.headers.get("x-real-ip")?.trim() ?? "") || "desconhecido";
+}
+
+/**
+ * Remove a porta que o App Service costuma anexar ("187.1.2.3:52341"). Sem
+ * isso, cada conexão nova do mesmo IP viraria uma chave diferente — e o limite
+ * por IP não limitaria nada.
+ */
+function stripPort(value: string): string {
+  if (value.startsWith("[")) {
+    // IPv6 entre colchetes: "[::1]:443".
+    const close = value.indexOf("]");
+    return close > 0 ? value.slice(1, close) : value;
+  }
+  // Dois-pontos único = IPv4 com porta. Vários = IPv6 puro, que fica inteiro.
+  const first = value.indexOf(":");
+  if (first > -1 && first === value.lastIndexOf(":")) return value.slice(0, first);
+  return value;
 }
 
 export interface RateRule {
@@ -84,11 +145,34 @@ export function checkRateLimits(
   return allowed;
 }
 
+/**
+ * Zera os baldes das regras indicadas.
+ *
+ * Existe para o login bem-sucedido: `loginEmail` é consumido ANTES de saber se
+ * a senha estava certa, então dez POSTs com o e-mail da vítima e senha qualquer
+ * esgotavam a janela e o dono legítimo levava 429 pela hora seguinte. Zerando
+ * no acerto, o balde só acumula tentativa ERRADA — que é o que ele deveria
+ * contar. Quem acerta a senha não é quem o limite persegue.
+ */
+export function clearRateLimits(
+  entries: Array<{ rule: RateRule; identifier: string }>,
+): void {
+  for (const { rule, identifier } of entries) {
+    clearRateLimit(`${rule.scope}:${identifier}`);
+  }
+}
+
 export const AUTH_RATE_RULES = {
   loginIp: { scope: "login:ip", limit: 5, windowSeconds: 60 },
   loginEmail: { scope: "login:email", limit: 10, windowSeconds: 60 * 60 },
   registerIp: { scope: "register:ip", limit: 5, windowSeconds: 60 * 60 },
   forgotEmail: { scope: "forgot:email", limit: 3, windowSeconds: 60 * 60 },
+  /*
+   * Sem limite por IP, cada endereço tinha o próprio balde de 3/h e uma lista
+   * inteira de e-mails era varrível de uma vez — o limite por e-mail não custa
+   * nada a quem testa mil endereços diferentes.
+   */
+  forgotIp: { scope: "forgot:ip", limit: 10, windowSeconds: 60 * 60 },
   resetIp: { scope: "reset:ip", limit: 10, windowSeconds: 60 * 60 },
   verifyEmailAddress: { scope: "verify:email", limit: 10, windowSeconds: 60 * 60 },
   verifyIp: { scope: "verify:ip", limit: 30, windowSeconds: 60 * 60 },

@@ -1,6 +1,8 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 import { learnFromCorrection, parseBulk, reinforce } from "./categorize";
 import { addMonthsToDate, today } from "./dates";
@@ -30,6 +32,67 @@ import type { ParsedEntry } from "./categorize";
  * "an error occurred", que não ajuda ninguém.
  */
 
+/**
+ * Recusa padrao das actions sem sessao.
+ *
+ * O layout de (app) redireciona para /login, mas isso nao protege nada aqui: a
+ * doc do Next e explicita em que layout nao controla se o resto da rota roda, e
+ * Server Action tem rota propria com ID estavel que qualquer cliente chama por
+ * POST sem passar por layout nenhum.
+ */
+const DENIED = { ok: false as const, error: "Faça login para continuar." };
+
+/** Teto e formato das linhas vindas do parser de fatura (client-side). */
+const importInvoiceLinesSchema = z
+  .array(
+    z.object({
+      description: z.string().trim().min(1).max(200),
+      amountCents: z.number().int().min(-100_000_000).max(100_000_000),
+      purchaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      categoryId: z.string().min(1).max(64),
+      installmentNo: z.number().int().min(1).max(99).nullable(),
+      installmentTotal: z.number().int().min(1).max(99).nullable(),
+    }),
+  )
+  .min(1)
+  .max(500);
+
+/**
+ * Teto e formato das linhas revisadas do lançamento rápido.
+ *
+ * Server Action é endpoint HTTP: o array chega direto do cliente, e não do
+ * preview. Sem schema, `installments` grande passava até `repo.createTransaction`,
+ * que faz `splitCents(total, parts)` -> `Array.from({ length: parts })` e
+ * derrubava o processo por memória com um único POST. Os limites são os mesmos
+ * de `transactionSchema` (72 parcelas) e de `importInvoiceLinesSchema` (500
+ * linhas), porque é o mesmo tipo de dado entrando pela mesma tabela.
+ */
+const bulkEntriesSchema = z
+  .array(
+    z.object({
+      description: z.string().trim().min(1).max(200),
+      amountCents: z.number().int().min(1).max(100_000_000),
+      type: z.enum(["INCOME", "EXPENSE"]),
+      categoryId: z.string().min(1).max(64),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      nature: z.enum(["FIXO", "VISTA", "PARCELADO"]),
+      installments: z.number().int().min(1).max(72).nullable(),
+      accountId: z.string().max(64).nullable(),
+      incomeSourceId: z.string().max(64).nullable(),
+      method: z
+        .enum(["PIX", "DEBITO", "CREDITO", "DINHEIRO", "BOLETO", "TRANSFERENCIA"])
+        .nullable(),
+      matchedKeyword: z.string().max(120).nullable(),
+      corrected: z.boolean(),
+    }),
+  )
+  .min(1)
+  .max(500);
+
+/** Teto do texto do lançamento rápido. Ver previewBulkAction. */
+const MAX_BULK_TEXT_CHARS = 20_000;
+const MAX_BULK_LINES = 500;
+
 /** As telas que dependem de lançamento. Revalidadas juntas após cada escrita. */
 function revalidateFinance(): void {
   revalidatePath("/");
@@ -38,6 +101,44 @@ function revalidateFinance(): void {
   revalidatePath("/economia");
   revalidatePath("/investimentos");
   revalidatePath("/carteiras");
+}
+
+/**
+ * Valida o avatar como data URL de imagem de verdade.
+ *
+ * Antes a checagem era só o prefixo e o comprimento: qualquer coisa depois de
+ * "data:image/png;base64," era gravada como se fosse imagem. Não dá XSS (o
+ * `<img>` honra o MIME declarado e não executa nada), mas a coluna virava
+ * armazenamento de conteúdo arbitrário — 2 MB por usuário de qualquer bytes,
+ * servidos de volta pela aplicação para o navegador de quem abre o perfil.
+ *
+ * Duas checagens além do prefixo: o payload precisa ser base64 bem formado, e
+ * os primeiros bytes decodificados precisam bater com a assinatura do formato
+ * declarado no MIME. Só o cabeçalho é decodificado; validar 2 MB de base64 a
+ * cada gravação seria trabalho desnecessário.
+ */
+function avatarValido(dataUrl: string): boolean {
+  if (dataUrl.length > 2_800_000) return false;
+
+  const cabecalho = /^data:image\/(jpeg|png|webp);base64,/i.exec(dataUrl);
+  if (!cabecalho) return false;
+
+  const tipo = cabecalho[1].toLowerCase();
+  const payload = dataUrl.slice(cabecalho[0].length);
+  // Base64 canônico: alfabeto padrão, sem quebra de linha, múltiplo de 4.
+  if (payload.length < 4 || payload.length % 4 !== 0) return false;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) return false;
+
+  const inicio = Buffer.from(payload.slice(0, 32), "base64");
+  if (inicio.length < 12) return false;
+
+  if (tipo === "jpeg") return inicio[0] === 0xff && inicio[1] === 0xd8 && inicio[2] === 0xff;
+  if (tipo === "png") {
+    return inicio.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  // WebP: "RIFF" + 4 bytes de tamanho + "WEBP".
+  return inicio.subarray(0, 4).toString("ascii") === "RIFF" &&
+    inicio.subarray(8, 12).toString("ascii") === "WEBP";
 }
 
 export async function updateProfileAction(formData: FormData): Promise<ActionResult> {
@@ -60,7 +161,7 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
   if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
     return { ok: false, error: "Informe uma data de nascimento válida." };
   }
-  if (avatarDataUrl && (!/^data:image\/(jpeg|png|webp);base64,/i.test(avatarDataUrl) || avatarDataUrl.length > 2_800_000)) {
+  if (avatarDataUrl && !avatarValido(avatarDataUrl)) {
     return { ok: false, error: "A foto deve ser JPG, PNG ou WebP e ter no máximo 2 MB." };
   }
 
@@ -88,6 +189,9 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
 export async function createTransactionAction(
   formData: FormData,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const nature = formData.get("nature");
 
   const parsed = transactionSchema.safeParse({
@@ -174,6 +278,9 @@ export async function createTransactionAction(
 }
 
 export async function deleteTransactionAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deleteTransaction(id);
     revalidateFinance();
@@ -196,7 +303,29 @@ export async function deleteTransactionAction(id: string): Promise<ActionResult>
 export async function previewBulkAction(
   text: string,
 ): Promise<{ ok: true; entries: ParsedEntry[] } | { ok: false; error: string }> {
-  if (!text.trim()) return { ok: false, error: "Escreva ao menos um lançamento." };
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  // Server Action recebe o que o cliente serializar: o tipo declarado não é
+  // garantia nenhuma em runtime, e `.trim()` num não-string estouraria aqui.
+  if (typeof text !== "string" || !text.trim()) {
+    return { ok: false, error: "Escreva ao menos um lançamento." };
+  }
+
+  /*
+   * Teto de tamanho antes de tocar no parser.
+   *
+   * `text` vem direto do cliente (Server Action é rota HTTP) e cada linha passa
+   * por regex com `.*?` preguiçoso seguido de `[\d.,]+` guloso ancorado no fim —
+   * padrão de backtracking quadrático. Sem teto, um texto grande vira minutos de
+   * CPU num processo single-threaded, que é DoS com uma requisição.
+   */
+  if (text.length > MAX_BULK_TEXT_CHARS) {
+    return { ok: false, error: "Texto longo demais. Divida em blocos menores." };
+  }
+  if (text.split("\n").length > MAX_BULK_LINES) {
+    return { ok: false, error: `Envie no máximo ${MAX_BULK_LINES} linhas por vez.` };
+  }
 
   try {
     const categories = repo.listCategories();
@@ -234,13 +363,27 @@ export async function commitBulkAction(
     corrected: boolean;
   }>,
 ): Promise<ActionResult> {
-  if (entries.length === 0) return { ok: false, error: "Nada para salvar." };
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return { ok: false, error: "Nada para salvar." };
+  }
+
+  /*
+   * Schema na fronteira: o array chega do cliente, não do preview. Sem ele,
+   * `installments` sem teto chegava a `repo.createTransaction`, que aloca um
+   * elemento por parcela em `splitCents` — memória do processo inteiro por um
+   * POST só. Os campos e limites espelham `importInvoiceLinesSchema`, que grava
+   * o mesmo tipo de dado.
+   */
+  const parsed = bulkEntriesSchema.safeParse(entries);
+  if (!parsed.success) {
+    return { ok: false, error: "Lançamentos inválidos ou em quantidade acima do permitido." };
+  }
 
   try {
-    for (const e of entries) {
-      if (e.amountCents <= 0 || !e.categoryId || !e.description.trim()) {
-        return { ok: false, error: `Lançamento incompleto: "${e.description}".` };
-      }
+    for (const e of parsed.data) {
       if (e.nature === "PARCELADO" && (e.installments ?? 0) < 2) {
         return {
           ok: false,
@@ -249,7 +392,7 @@ export async function commitBulkAction(
       }
     }
 
-    for (const e of entries) {
+    for (const e of parsed.data) {
       repo.createTransaction({
         type: e.type,
         amountCents: e.amountCents,
@@ -277,7 +420,7 @@ export async function commitBulkAction(
     revalidateFinance();
     return {
       ok: true,
-      message: `${entries.length} ${entries.length === 1 ? "lançamento salvo" : "lançamentos salvos"}.`,
+      message: `${parsed.data.length} ${parsed.data.length === 1 ? "lançamento salvo" : "lançamentos salvos"}.`,
     };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
@@ -287,6 +430,9 @@ export async function commitBulkAction(
 // --------------------------------------------------------------- categorias
 
 export async function createCategoryAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = categorySchema.safeParse({
     name: formData.get("name"),
     kind: formData.get("kind"),
@@ -317,6 +463,9 @@ export async function updateBudgetAction(
   id: string,
   budget: string,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = categorySchema
     .pick({ budget: true })
     .safeParse({ budget: budget || undefined });
@@ -335,6 +484,9 @@ export async function updateBudgetAction(
 // ------------------------------------------------------------ contas a pagar
 
 export async function createBillAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const recurrence = formData.get("recurrence");
 
   const parsed = billSchema.safeParse({
@@ -374,6 +526,9 @@ export async function createBillAction(formData: FormData): Promise<ActionResult
 }
 
 export async function payBillAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = payBillSchema.safeParse({
     billId: formData.get("billId"),
     amount: formData.get("amount"),
@@ -410,6 +565,9 @@ export async function payBillQuickAction(
   billId: string,
   accountId?: string | null,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     const bill = repo.getBill(billId);
     if (!bill) return { ok: false, error: "Conta não encontrada." };
@@ -441,6 +599,9 @@ export async function payCardInvoiceAction(
   amountCents: number,
   date: string,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   if (!fromAccountId) {
     return { ok: false, error: "Escolha de qual conta sai o pagamento da fatura." };
   }
@@ -467,6 +628,9 @@ export async function payScheduledAction(
   amountCents: number,
   date: string,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   if (!accountId) {
     return { ok: false, error: "Escolha de qual conta esse pagamento sai." };
   }
@@ -515,7 +679,21 @@ export async function importInvoiceAction(
     installmentTotal: number | null;
   }>,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   if (linhas.length === 0) return { ok: false, error: "Nenhuma compra selecionada." };
+
+  /*
+   * Diferente das rotas de API, uma Server Action recebe o argumento cru do
+   * cliente. Sem schema nem teto, um POST com milhoes de linhas gravava uma
+   * transacao por item ate encher o disco.
+   */
+  const parsed = importInvoiceLinesSchema.safeParse(linhas);
+  if (!parsed.success) {
+    return { ok: false, error: "Lista de compras invalida ou grande demais (limite de 500 itens)." };
+  }
+  linhas = parsed.data;
 
   try {
     const card = repo.getAccount(cardId);
@@ -624,6 +802,9 @@ export async function importInvoiceAction(
 // ---------------------------------------------------------------- carteiras
 
 export async function createAccountAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const kind = formData.get("kind");
 
   const parsed = accountSchema.safeParse({
@@ -672,6 +853,9 @@ export async function createAccountAction(formData: FormData): Promise<ActionRes
  * só muda o destino.
  */
 export async function updateAccountAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, error: "Registro não identificado." };
 
@@ -719,6 +903,9 @@ export async function updateAccountAction(formData: FormData): Promise<ActionRes
 }
 
 export async function deleteAccountAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deleteAccount(id);
     revalidateFinance();
@@ -734,6 +921,9 @@ export async function deleteAccountAction(id: string): Promise<ActionResult> {
 export async function createIncomeSourceAction(
   formData: FormData,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = incomeSourceSchema.safeParse({
     name: formData.get("name"),
     kind: formData.get("kind"),
@@ -757,6 +947,9 @@ export async function createIncomeSourceAction(
 }
 
 export async function deleteIncomeSourceAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deleteIncomeSource(id);
     revalidateFinance();
@@ -769,6 +962,9 @@ export async function deleteIncomeSourceAction(id: string): Promise<ActionResult
 
 /** Exclui uma compra parcelada inteira, com todas as parcelas futuras. */
 export async function deletePurchaseAction(purchaseId: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deletePurchase(purchaseId);
     revalidateFinance();
@@ -779,6 +975,9 @@ export async function deletePurchaseAction(purchaseId: string): Promise<ActionRe
 }
 
 export async function unpayBillAction(transactionId: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.unpayBill(transactionId);
     revalidateFinance();
@@ -792,6 +991,9 @@ export async function setBillActiveAction(
   id: string,
   active: boolean,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.setBillActive(id, active);
     revalidateFinance();
@@ -802,6 +1004,9 @@ export async function setBillActiveAction(
 }
 
 export async function deleteBillAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deleteBill(id);
     revalidateFinance();
@@ -814,6 +1019,9 @@ export async function deleteBillAction(id: string): Promise<ActionResult> {
 // -------------------------------------------------------------------- metas
 
 export async function createGoalAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = goalSchema.safeParse({
     name: formData.get("name"),
     target: formData.get("target"),
@@ -841,6 +1049,9 @@ export async function addToGoalAction(
   id: string,
   amount: string,
 ): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = goalSchema.pick({ target: true }).safeParse({ target: amount });
   if (!parsed.success) return { ok: false, error: "Valor inválido." };
 
@@ -854,6 +1065,9 @@ export async function addToGoalAction(
 }
 
 export async function deleteGoalAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deleteGoal(id);
     revalidatePath("/economia");
@@ -866,6 +1080,9 @@ export async function deleteGoalAction(id: string): Promise<ActionResult> {
 // ----------------------------------------------------------------- cenários
 
 export async function createScenarioAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   const parsed = scenarioSchema.safeParse({
     name: formData.get("name"),
     initial: formData.get("initial") || undefined,
@@ -898,6 +1115,9 @@ export async function createScenarioAction(formData: FormData): Promise<ActionRe
 }
 
 export async function deleteScenarioAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
   try {
     repo.deleteScenario(id);
     revalidatePath("/investimentos");
@@ -945,13 +1165,17 @@ export const createIncomeSourceForm: FormAction = async (_prev, formData) =>
   createIncomeSourceAction(formData);
 
 /**
- * Traduz erro do banco para linguagem de gente — SEM engolir o original.
+ * Traduz erro do banco para linguagem de gente — sem devolver o original.
  *
- * A versão anterior devolvia "Não foi possível salvar" para qualquer erro não
- * previsto, e o texto real só aparecia no console do servidor. Numa versão beta
- * isso é o pior dos dois mundos: quem usa não consegue relatar o que houve, e
- * quem desenvolve não consegue reproduzir. Agora o erro desconhecido chega
- * inteiro na tela, com prefixo indicando que é detalhe técnico.
+ * A versão anterior colava a mensagem crua do SQLite na tela para facilitar o
+ * relato de bug na beta. O preço era alto demais: ia junto o nome de tabela e
+ * coluna, o caminho do arquivo do banco e o texto de `assertFinanceStorageMode`,
+ * que descreve como o servidor guarda os dados. Isso é mapa do alvo entregue a
+ * qualquer um que consiga provocar um erro.
+ *
+ * O relato continua possível pelo ID de correlação: o mesmo código aparece no
+ * log do servidor, com a exceção inteira. Quem usa informa oito caracteres;
+ * quem investiga acha o erro completo.
  *
  * Os casos PREVISTOS continuam com mensagem amigável — ali a tradução ajuda,
  * porque "UNIQUE constraint failed: categories.name" não diz nada a ninguém.
@@ -972,17 +1196,16 @@ function mensagemDeErro(e: unknown): string {
     return "Registro relacionado inválido ou removido. Recarregue a página.";
   }
   if (raw.includes("CHECK constraint failed: accounts")) {
-    return `Valor fora do permitido no cadastro da conta. Detalhe: ${raw}`;
+    return "Valor fora do permitido no cadastro da conta. Confira os campos e tente de novo.";
   }
   if (raw.includes("CHECK constraint failed")) {
-    return `Algum valor está fora do permitido. Detalhe: ${raw}`;
+    return "Algum valor está fora do permitido. Confira os campos e tente de novo.";
   }
   if (raw.includes("NOT NULL constraint failed")) {
-    return `Faltou preencher um campo obrigatório. Detalhe: ${raw}`;
+    return "Faltou preencher um campo obrigatório.";
   }
 
-  console.error("[actions] erro não tratado:", e);
-  // Beta: mostra o erro real em vez de escondê-lo. Quando o app estabilizar,
-  // dá para voltar a uma mensagem genérica — mas aí os casos já estarão mapeados.
-  return `Erro não tratado: ${raw}`;
+  const id = randomUUID().slice(0, 8);
+  console.error(`[actions] erro não tratado ${id}:`, e);
+  return `Não foi possível concluir a operação. Informe o código ${id} ao suporte.`;
 }

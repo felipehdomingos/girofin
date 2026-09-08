@@ -41,14 +41,31 @@ export function resolveFinanceDbPath(userId?: string): string {
 let instance: DatabaseSync | null = null;
 const userInstances = new Map<string, DatabaseSync>();
 
+/**
+ * Trava do armazenamento financeiro compartilhado.
+ *
+ * Este banco não tem coluna `user_id` em tabela nenhuma: abrir o arquivo com
+ * mais de um usuário autenticado significa todo mundo lendo e escrevendo os
+ * lançamentos de todo mundo. Por isso a trava é fail-closed — a aplicação
+ * quebra em vez de vazar.
+ *
+ * As exceções antigas foram removidas:
+ *
+ * - `WEBSITE_SITE_NAME.startsWith("girofin-staging-")` ligava o modo
+ *   compartilhado por NOME DE HOST. O Azure App Service é quem define essa
+ *   variável, então a proteção dependia de como o recurso foi batizado — e o
+ *   slot real se chama `girofin-staging-1704`, ou seja, a trava estava
+ *   desligada em staging sem ninguém ter pedido.
+ * - `APP_ENV === "staging"` tinha o mesmo efeito e é ainda mais fácil de acabar
+ *   copiado para produção numa troca de configuração.
+ *
+ * Sobra uma única chave explícita. Se staging precisa de dados para testar, o
+ * caminho é um banco de staging com dados sintéticos — não relaxar o
+ * isolamento entre usuários.
+ */
 function assertFinanceStorageMode(): void {
-  const isStagingAppService =
-    process.env.WEBSITE_SITE_NAME?.startsWith("girofin-staging-") === true;
-
   if (
     (process.env.NODE_ENV === "production" || authConfigured()) &&
-    process.env.APP_ENV !== "staging" &&
-    !isStagingAppService &&
     process.env.ALLOW_UNSCOPED_FINANCEIRO_DB !== "true"
   ) {
     throw new Error(

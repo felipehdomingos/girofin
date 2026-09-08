@@ -8,13 +8,22 @@ import { BrandLogo } from "@/components/brand-logo";
 
 type Mode = "login" | "register" | "forgot" | "reset";
 
-export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
+export function AuthForm({
+  mode,
+  token = "",
+  /** Erro vindo do servidor (ex.: `?error=` do callback do Google). */
+  initialError = "",
+}: {
+  mode: Mode;
+  token?: string;
+  initialError?: string;
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [pending, setPending] = useState(false);
   const [awaitingVerification, setAwaitingVerification] = useState(false);
   const [verificationEmail, setVerificationEmail] = useState("");

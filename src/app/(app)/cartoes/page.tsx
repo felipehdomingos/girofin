@@ -14,6 +14,7 @@ import {
   listTransactionsInRange,
 } from "@/lib/repo";
 import { monthBounds } from "@/lib/dates";
+import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,9 @@ export default async function CartoesPage({
 }: {
   searchParams: Promise<{ mes?: string; cartao?: string }>;
 }) {
+  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  await requirePageUser();
+
   const params = await searchParams;
   const month = /^\d{4}-\d{2}$/.test(params.mes ?? "") ? params.mes! : currentMonth();
 

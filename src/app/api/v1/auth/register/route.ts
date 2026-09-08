@@ -29,7 +29,18 @@ export async function POST(request: Request) {
   try {
     const body = schema.parse(await request.json());
 
-    if (!checkRateLimits([{ rule: AUTH_RATE_RULES.registerIp, identifier: clientIp(request) }])) {
+    /*
+     * Limite por IP e pelo e-mail alvo. Só por IP não bastava: quando o cadastro
+     * já existe pendente, esta rota reemite o código de confirmação — ou seja,
+     * quem posta aqui escolhe destinatário e volume de e-mail e ainda zera o
+     * contador de tentativas do código. O balde por e-mail é o mesmo de
+     * /resend-verification de propósito: as duas rotas disparam o mesmo envio,
+     * e baldes separados dariam o dobro do limite pretendido.
+     */
+    if (!checkRateLimits([
+      { rule: AUTH_RATE_RULES.registerIp, identifier: clientIp(request) },
+      { rule: AUTH_RATE_RULES.resendEmail, identifier: body.email.toLowerCase() },
+    ])) {
       return apiRateLimited();
     }
 
@@ -37,7 +48,10 @@ export async function POST(request: Request) {
     try {
       user = await registerUser(body);
     } catch (error) {
-      if (error instanceof Error && error.message.includes("duplicate key")) {
+      // SQLSTATE 23505 = unique_violation. Antes a checagem era pelo TEXTO da
+      // mensagem do driver: se ele mudasse o texto, o ramo de resposta uniforme
+      // deixava de rodar e a enumeração de contas voltava sem ninguém notar.
+      if ((error as { code?: string }).code === "23505") {
         /*
          * Já existe conta com este e-mail. O dono do endereço precisa saber o
          * que fazer; quem apenas testou o e-mail não pode notar diferença
@@ -45,8 +59,10 @@ export async function POST(request: Request) {
          */
         const pending = await findUnverifiedUserByEmail(body.email);
         if (pending) {
+          // `null` = o usuário já recebeu códigos demais na janela. Silêncio, e
+          // a mesma resposta de sempre: o teto não pode virar oráculo.
           const verification = await createEmailVerification(pending.id);
-          await sendEmailVerification(verification);
+          if (verification) await sendEmailVerification(verification);
         } else {
           await sendAccountExistsEmail({ email: body.email });
         }
@@ -62,6 +78,9 @@ export async function POST(request: Request) {
      */
     try {
       const verification = await createEmailVerification(user.id);
+      // Conta recém-criada nunca estoura o teto de emissões (a janela começa
+      // zerada), mas se isso mudar o cadastro é desfeito em vez de ficar preso.
+      if (!verification) throw new Error("VERIFICATION_THROTTLED");
       await sendEmailVerification(verification);
     } catch (error) {
       await deleteUnverifiedUser(user.id);

@@ -9,6 +9,16 @@ import { parseBRLToCents } from "./money";
  * (Guideline nextjs/Security: "Validate Server Action input", severidade High.)
  */
 
+/**
+ * Teto de sanidade para valor em dinheiro: R$ 100.000.000,00 em centavos.
+ *
+ * Não é regra de negócio, é limite de entrada. Sem teto, um número absurdo
+ * atravessava até o cálculo de parcelas e de projeção, onde vira laço e
+ * alocação proporcionais ao valor. Quem realmente movimenta mais que isso não
+ * está usando um app de finanças pessoais.
+ */
+const MAX_MONEY_CENTS = 10_000_000_000;
+
 /** Aceita o que a pessoa digita ("1.234,56", "R$ 89,90") e devolve centavos. */
 const moneyField = (label: string) =>
   z
@@ -26,6 +36,10 @@ const moneyField = (label: string) =>
       }
       if (cents <= 0) {
         ctx.addIssue({ code: "custom", message: `O valor precisa ser maior que zero.` });
+        return z.NEVER;
+      }
+      if (cents > MAX_MONEY_CENTS) {
+        ctx.addIssue({ code: "custom", message: `Valor alto demais para ${label}.` });
         return z.NEVER;
       }
       return cents;

@@ -2,13 +2,19 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getUserByAccessToken, rotateMobileSession } from "@/lib/auth-db";
-import { apiError } from "@/lib/api-response";
+import { apiError, apiRateLimited } from "@/lib/api-response";
+import { AUTH_RATE_RULES, checkRateLimits, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({ refreshToken: z.string().min(40).max(300) });
 
 export async function POST(request: Request) {
   try {
     const body = schema.parse(await request.json());
+
+    if (!checkRateLimits([{ rule: AUTH_RATE_RULES.refreshIp, identifier: clientIp(request) }])) {
+      return apiRateLimited();
+    }
+
     const session = await rotateMobileSession(body.refreshToken);
     if (!session) return apiError(401, "INVALID_REFRESH_TOKEN", "Sua sessão móvel expirou ou foi revogada. Faça login novamente.");
     const user = await getUserByAccessToken(session.accessToken);
