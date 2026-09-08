@@ -12,6 +12,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +31,15 @@ jobs:
         run: npm run build
         env:
           APP_ENV: staging
+
+      # So as tabelas de autenticacao nascem em runtime; o schema financeiro nao.
+      # Sem este passo, `categories` e companhia dependem de alguem lembrar de
+      # rodar `npm run db:apply` na mao. Roda antes do deploy para o codigo novo
+      # encontrar o banco pronto, e e pulado quando o segredo nao esta
+      # configurado, para nao derrubar um deploy que hoje passa.
+      - name: Aplica o schema do banco
+        if: env.DATABASE_URL != ''
+        run: npm run db:apply
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
