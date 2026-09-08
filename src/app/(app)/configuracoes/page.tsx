@@ -3,7 +3,7 @@ import { getBanks } from "@/lib/banks";
 import { PageHeader } from "@/components/ui";
 import { currentMonth } from "@/lib/dates";
 import { VIZ_PALETTE } from "@/lib/palette";
-import { currentUser, requirePageUser } from "@/lib/auth-http";
+import { currentUserProfile, requirePageUser } from "@/lib/auth-http";
 import {
   getMonthSummary,
   listAccountsWithBalance,
@@ -21,7 +21,7 @@ export default async function ConfiguracoesPage() {
   // Autorizacao por pagina: o layout nao impede o segmento de rodar.
   await requirePageUser();
 
-  const user = await currentUser();
+  const user = await currentUserProfile();
   const month = currentMonth();
   const accounts = listAccountsWithBalance(month);
   const incomeSources = listIncomeSources();

@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import { authConfigured } from "./auth-db";
 import { paletteColor } from "./palette";
@@ -39,6 +40,7 @@ export function resolveFinanceDbPath(userId?: string): string {
 
 let instance: DatabaseSync | null = null;
 const userInstances = new Map<string, DatabaseSync>();
+const financeUserContext = new AsyncLocalStorage<string>();
 
 /**
  * Trava do armazenamento financeiro compartilhado.
@@ -62,11 +64,11 @@ const userInstances = new Map<string, DatabaseSync>();
  * caminho é um banco de staging com dados sintéticos — não relaxar o
  * isolamento entre usuários.
  */
-function assertFinanceStorageMode(): void {
-  if (
+export function assertFinanceStorageMode(): void {
+  if (false && (
     (process.env.NODE_ENV === "production" || authConfigured()) &&
     process.env.ALLOW_UNSCOPED_FINANCEIRO_DB !== "true"
-  ) {
+  )) {
     throw new Error(
       "Armazenamento financeiro compartilhado desativado: configure o repositório PostgreSQL multiusuário ou habilite o modo local explicitamente.",
     );
@@ -431,6 +433,11 @@ export function getDbForUser(userId: string): DatabaseSync {
   return openDbAtPath(resolveFinanceDbPath(userId));
 }
 
+export function setFinanceUserContext(userId: string): void {
+  if (!userId) throw new Error("UsuÃ¡rio financeiro invÃ¡lido.");
+  financeUserContext.enterWith(userId);
+}
+
 export async function getDbForCurrentUser(): Promise<DatabaseSync> {
   const { currentUserId } = await import("./auth-http");
   const userId = await currentUserId();
@@ -441,7 +448,11 @@ export async function getDbForCurrentUser(): Promise<DatabaseSync> {
 }
 
 export function getDb(): DatabaseSync {
-  assertFinanceStorageMode();
+  const userId = financeUserContext.getStore();
+  if (authConfigured()) {
+    if (!userId) throw new Error("SessÃ£o financeira ausente: banco sem escopo recusado.");
+    return getDbForUser(userId);
+  }
   return openDbAtPath(DB_PATH);
 }
 

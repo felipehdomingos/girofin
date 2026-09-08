@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation";
-
 import { Nav } from "@/components/nav";
-import { authConfigured, currentUser } from "@/lib/auth-http";
+import { requirePageUser } from "@/lib/auth-http";
 import { listAccounts } from "@/lib/repo";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = await currentUser();
-  if ((authConfigured() || process.env.NODE_ENV === "production") && !user) {
-    redirect("/login");
-  }
+  const user = await requirePageUser();
 
   // O item "Cartões" só existe depois que há cartão cadastrado — menu com
   // seção vazia é ruído. Leitura barata: uma consulta de contas por navegação.

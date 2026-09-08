@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { setFinanceUserContext } from "./db";
 
 import {
   authCookieName,
@@ -10,6 +11,7 @@ import {
   createSession,
   deleteSession,
   getUserBySession,
+  getUserProfileBySession,
   getUserByAccessToken,
   revokeAllSessions,
   type AuthUser,
@@ -46,6 +48,11 @@ export async function currentUser(): Promise<AuthUser | null> {
   return getUserBySession(store.get(authCookieName())?.value ?? "");
 }
 
+export async function currentUserProfile(): Promise<AuthUser | null> {
+  const store = await cookies();
+  return getUserProfileBySession(store.get(authCookieName())?.value ?? "");
+}
+
 export async function currentApiUser(request: Request): Promise<AuthUser | null> {
   const authorization = request.headers.get("authorization");
   if (!authorization?.startsWith("Bearer ")) return null;
@@ -66,6 +73,7 @@ export async function currentApiUser(request: Request): Promise<AuthUser | null>
  */
 export async function requirePageUser(): Promise<AuthUser | null> {
   const user = await currentUser();
+  if (user) setFinanceUserContext(user.id);
   if (!user && (authConfigured() || process.env.NODE_ENV === "production")) {
     redirect("/login");
   }
@@ -74,6 +82,7 @@ export async function requirePageUser(): Promise<AuthUser | null> {
 
 export async function currentUserId(): Promise<string | null> {
   const user = await currentUser();
+  if (user) setFinanceUserContext(user.id);
   return user?.id ?? null;
 }
 
@@ -82,5 +91,6 @@ export async function requireCurrentUserId(): Promise<string> {
   if (!userId) {
     throw new Error("Sessão de usuário ausente para acesso ao repositório financeiro.");
   }
+  setFinanceUserContext(userId);
   return userId;
 }

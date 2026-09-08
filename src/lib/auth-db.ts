@@ -204,6 +204,7 @@ export interface AuthUser {
   city?: string | null;
   state?: string | null;
   avatarDataUrl?: string | null;
+  hasAvatar?: boolean;
 }
 
 export async function registerUser(input: {
@@ -275,13 +276,39 @@ export async function getUserBySession(token: string): Promise<AuthUser | null> 
   const result = await getPool().query<AuthUser>(
     `SELECT u.id, u.email, u.name, (u.email_verified_at IS NOT NULL) AS "emailVerified",
             u.phone, u.birth_date AS "birthDate", u.city, u.state,
-            u.avatar_data_url AS "avatarDataUrl"
+            (u.avatar_data_url IS NOT NULL AND u.avatar_data_url <> '') AS "hasAvatar"
        FROM app_sessions s
        JOIN app_users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.kind = 'web' AND s.expires_at > now()`,
     [digest(token)],
   );
   return result.rows[0] ?? null;
+}
+
+export async function getUserProfileBySession(token: string): Promise<AuthUser | null> {
+  if (!authConfigured() || !token) return null;
+  await ensureAuthSchema();
+  const result = await getPool().query<AuthUser>(
+    `SELECT u.id, u.email, u.name, (u.email_verified_at IS NOT NULL) AS "emailVerified",
+            u.phone, u.birth_date AS "birthDate", u.city, u.state,
+            u.avatar_data_url AS "avatarDataUrl",
+            (u.avatar_data_url IS NOT NULL AND u.avatar_data_url <> '') AS "hasAvatar"
+       FROM app_sessions s JOIN app_users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.kind = 'web' AND s.expires_at > now()` ,
+    [digest(token)],
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function getUserAvatarBySession(token: string): Promise<string | null> {
+  if (!authConfigured() || !token) return null;
+  await ensureAuthSchema();
+  const result = await getPool().query<{ avatar_data_url: string | null }>(
+    `SELECT u.avatar_data_url FROM app_sessions s JOIN app_users u ON u.id = s.user_id
+      WHERE s.token_hash = $1 AND s.kind = 'web' AND s.expires_at > now()`,
+    [digest(token)],
+  );
+  return result.rows[0]?.avatar_data_url ?? null;
 }
 
 export async function deleteSession(token: string): Promise<void> {

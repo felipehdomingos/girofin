@@ -15,7 +15,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { LogoutButton } from "@/components/logout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-type NavUser = { name: string; email: string; avatarDataUrl?: string | null };
+type NavUser = { name: string; email: string; hasAvatar?: boolean };
 
 /**
  * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
@@ -104,10 +104,10 @@ export function Nav({ hasCards = false, user }: { hasCards?: boolean; user?: Nav
           })}
         </ul>
         <div className="mt-auto flex items-center gap-md border-t border-border px-md pt-lg">
-          {user?.avatarDataUrl ? (
+          {user?.hasAvatar ? (
             // A URL foi validada e limitada no formulário de perfil.
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.avatarDataUrl} alt="" className="size-9 shrink-0 rounded-full object-cover" />
+            <img src="/api/v1/me/avatar" alt="" className="size-9 shrink-0 rounded-full object-cover" />
           ) : (
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-on-accent" aria-hidden="true">
               {initials}

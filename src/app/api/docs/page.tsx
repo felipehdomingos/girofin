@@ -1,30 +1,8 @@
-"use client";
+import { notFound } from "next/navigation";
 
-import { useEffect } from "react";
+import ApiDocsClient from "./api-docs-client";
 
 export default function ApiDocsPage() {
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js";
-    script.onload = () => {
-      const SwaggerUIBundle = (
-        window as unknown as {
-          SwaggerUIBundle: (options: Record<string, unknown>) => void;
-        }
-      ).SwaggerUIBundle;
-      SwaggerUIBundle({ url: "/api/openapi.json", dom_id: "#swagger-ui" });
-    };
-    document.body.appendChild(script);
-    return () => script.remove();
-  }, []);
-
-  return (
-    <main className="min-h-dvh bg-white p-4 text-black">
-      <link
-        rel="stylesheet"
-        href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"
-      />
-      <div id="swagger-ui" />
-    </main>
-  );
+  if (process.env.NODE_ENV === "production" || process.env.APP_ENV === "production") notFound();
+  return <ApiDocsClient />;
 }
