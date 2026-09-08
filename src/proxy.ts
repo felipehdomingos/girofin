@@ -11,10 +11,17 @@ function makeCsp(nonce: string, isDocs: boolean): string {
     styles.push(SWAGGER_CDN);
   }
   return [
-    "default-src 'self'", "img-src 'self' data: https:",
-    `style-src ${styles.join(" ")}`, `script-src ${scripts.join(" ")}`,
-    "font-src 'self' data:", "connect-src 'self'", "worker-src 'self' blob:",
-    "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", "object-src 'none'",
+    "default-src 'self'",
+    "img-src 'self' data: https:",
+    `style-src ${styles.join(" ")}`,
+    `script-src ${scripts.join(" ")}`,
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "worker-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "object-src 'none'",
   ].join("; ");
 }
 
