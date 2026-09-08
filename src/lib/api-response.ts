@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
 
+export function isValidationError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "issues" in error &&
+      Array.isArray((error as { issues?: unknown }).issues),
+  );
+}
+
 export function apiError(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status });
 }

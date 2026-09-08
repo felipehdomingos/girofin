@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { createEmailVerification, findUnverifiedUserByEmail } from "@/lib/auth-db";
 import { sendEmailVerification } from "@/lib/auth-email";
-import { apiError, apiRateLimited, apiSuccess } from "@/lib/api-response";
+import { apiError, apiRateLimited, apiSuccess, isValidationError } from "@/lib/api-response";
 import { AUTH_RATE_RULES, checkRateLimits, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({ email: z.string().trim().email().max(254) });
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       message: "Se houver cadastro pendente para este e-mail, enviamos um novo código.",
     });
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    if (isValidationError(error)) {
       return apiError(400, "INVALID_EMAIL", "Informe um e-mail válido.");
     }
     console.error("[auth/resend-verification]", error);

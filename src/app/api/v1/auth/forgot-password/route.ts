@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { createPasswordReset } from "@/lib/auth-db";
 import { sendPasswordResetEmail } from "@/lib/auth-email";
-import { apiError, apiRateLimited } from "@/lib/api-response";
+import { apiError, apiRateLimited, isValidationError } from "@/lib/api-response";
 import { AUTH_RATE_RULES, checkRateLimits, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({ email: z.string().trim().email().max(254) });
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       message: "Se o e-mail estiver cadastrado, voce recebera as instrucoes de recuperacao.",
     });
   } catch (error) {
-    if (error instanceof z.ZodError) return apiError(400, "INVALID_EMAIL", "Informe um e-mail valido para recuperar a senha.");
+    if (isValidationError(error)) return apiError(400, "INVALID_EMAIL", "Informe um e-mail valido para recuperar a senha.");
     console.error("[auth/forgot-password]", error);
     return apiError(503, "AUTH_SERVICE_UNAVAILABLE", "Nao foi possivel processar a recuperacao agora. Tente novamente em instantes.");
   }

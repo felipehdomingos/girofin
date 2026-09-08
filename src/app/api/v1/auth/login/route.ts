@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { authenticateUser, createMobileSession } from "@/lib/auth-db";
 import { setAuthSession } from "@/lib/auth-http";
-import { apiError, apiRateLimited, apiSuccess } from "@/lib/api-response";
+import { apiError, apiRateLimited, apiSuccess, isValidationError } from "@/lib/api-response";
 import { AUTH_RATE_RULES, checkRateLimits, clearRateLimits, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     await setAuthSession(user.id);
     return apiSuccess({ user });
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    if (isValidationError(error)) {
       return apiError(400, "INVALID_LOGIN_INPUT", "Informe um e-mail valido e uma senha.");
     }
     console.error("[auth/login]", error);
