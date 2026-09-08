@@ -29,12 +29,17 @@ async function main() {
     setFinanceUserContext(userId);
     const { ensureFinanceSeedData } = require("../.test-build/src/lib/finance-pg-db.js");
     await ensureFinanceSeedData();
-    globalThis.__testPromises = [];
-    require("../.test-build/scripts/test-lib.js");
-    require("../.test-build/scripts/test-fatura.js");
-    require("../.test-build/scripts/test-invoice.js");
-    require("../.test-build/scripts/test-amarracao.js");
-    await Promise.all(globalThis.__testPromises);
+    const testFiles = [
+      "test-lib.js",
+      "test-fatura.js",
+      "test-invoice.js",
+      "test-amarracao.js",
+    ];
+    for (const file of testFiles) {
+      globalThis.__testPromises = [];
+      require(`../.test-build/scripts/${file}`);
+      await Promise.all(globalThis.__testPromises);
+    }
   } finally {
     await client.query("DELETE FROM app_users WHERE id = $1", [userId]);
     await client.end();
