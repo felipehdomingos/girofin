@@ -1,0 +1,57 @@
+name: CI
+
+# Portão de qualidade. Os workflows de deploy só rodam `npm run build`, e isso
+# acontece DEPOIS do merge — um commit que quebra os testes chegava em staging
+# sem nada barrar. Aqui a verificação acontece antes, no PR.
+on:
+  pull_request:
+    branches: [develop, staging, Master]
+  push:
+    branches: [develop, staging, Master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Push seguido de push na mesma branch: só o mais recente interessa.
+# PRs abertos ficam de fora do cancelamento pelo `github.ref` incluir o número.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Mesma major dos workflows de deploy e do `engines` do package.json.
+          # `node:sqlite`, usado pelo repositório financeiro, exige 22.5+.
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      # Os quatro passos rodam em sequência de propósito: typecheck é o mais
+      # rápido e pega o erro mais comum, então falha primeiro e economiza o
+      # resto. `build` fica por último por ser o mais caro.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # O build precisa de um valor qualquer aqui só para não divergir do
+          # ambiente real; nada neste job toca banco ou rede.
+          APP_ENV: ci
