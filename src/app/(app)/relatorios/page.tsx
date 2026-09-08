@@ -1,4 +1,4 @@
-import { CategoryBarChart, TrendChart } from "@/components/charts";
+﻿import { CategoryBarChart, TrendChart } from "@/components/charts";
 import { EntryDialog } from "@/components/entry-dialog";
 import { PeriodPicker } from "@/components/period-picker";
 import { TransactionList } from "@/components/transaction-list";
@@ -38,16 +38,16 @@ import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
 
-/** Amplitude máxima do período customizado, em meses (5 anos). */
+/** Amplitude mÃ¡xima do perÃ­odo customizado, em meses (5 anos). */
 const MAX_RANGE_MONTHS = 60;
 
 /**
- * Relatórios por período: semana, mês, ano ou intervalo customizado.
+ * RelatÃ³rios por perÃ­odo: semana, mÃªs, ano ou intervalo customizado.
  *
- * Substituiu a antiga tela "Lançar", que virou só uma lista depois que o
- * lançamento passou a ser um popup acessível de qualquer tela. O extrato
- * continua aqui embaixo — mas agora dentro do período que você escolher, e
- * não sempre no mês corrente.
+ * Substituiu a antiga tela "LanÃ§ar", que virou sÃ³ uma lista depois que o
+ * lanÃ§amento passou a ser um popup acessÃ­vel de qualquer tela. O extrato
+ * continua aqui embaixo â€” mas agora dentro do perÃ­odo que vocÃª escolher, e
+ * nÃ£o sempre no mÃªs corrente.
  */
 export default async function RelatoriosPage({
   searchParams,
@@ -60,7 +60,7 @@ export default async function RelatoriosPage({
   const params = await searchParams;
   const hoje = today();
 
-  // O período vem da URL: dá para voltar pelo navegador e compartilhar o recorte.
+  // O perÃ­odo vem da URL: dÃ¡ para voltar pelo navegador e compartilhar o recorte.
   const periodo = params.periodo ?? "mes";
   const dataValida = (d?: string) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
@@ -74,14 +74,14 @@ export default async function RelatoriosPage({
   } else if (periodo === "custom" && dataValida(params.de) && dataValida(params.ate)) {
     start = params.de!;
     end = params.ate!;
-    // Intervalo invertido viraria consulta vazia sem explicação: corrige na entrada.
+    // Intervalo invertido viraria consulta vazia sem explicaÃ§Ã£o: corrige na entrada.
     if (start > end) [start, end] = [end, start];
     /*
-     * Teto de amplitude. Só o FORMATO da data era validado, então "0001-01-01"
-     * a "9999-12-31" passava — e `getRangeSeries` monta uma chave por mês do
-     * intervalo, com trabalho proporcional à distância entre as duas datas. Uma
-     * URL montada à mão travava a renderização da página. Cinco anos cobre
-     * qualquer recorte que um app de finanças pessoais precise mostrar.
+     * Teto de amplitude. SÃ³ o FORMATO da data era validado, entÃ£o "0001-01-01"
+     * a "9999-12-31" passava â€” e `getRangeSeries` monta uma chave por mÃªs do
+     * intervalo, com trabalho proporcional Ã  distÃ¢ncia entre as duas datas. Uma
+     * URL montada Ã  mÃ£o travava a renderizaÃ§Ã£o da pÃ¡gina. Cinco anos cobre
+     * qualquer recorte que um app de finanÃ§as pessoais precise mostrar.
      */
     const limite = addMonthsToDate(start, MAX_RANGE_MONTHS);
     if (end > limite) end = limite;
@@ -89,11 +89,11 @@ export default async function RelatoriosPage({
     ({ start, end } = monthBounds(currentMonth()));
   }
 
-  const resumo = getRangeSummary(start, end);
-  const serie = getRangeSeries(start, end);
-  const porMetodo = getRangeByMethod(start, end);
-  const porConta = getRangeByAccount(start, end);
-  const lancamentos = listTransactionsInRange(start, end);
+  const resumo = await getRangeSummary(start, end);
+  const serie = await getRangeSeries(start, end);
+  const porMetodo = await getRangeByMethod(start, end);
+  const porConta = await getRangeByAccount(start, end);
+  const lancamentos = await listTransactionsInRange(start, end);
   const dias = daysInRange(start, end);
 
   const categoryData = resumo.byCategory.map((c) => ({
@@ -103,20 +103,20 @@ export default async function RelatoriosPage({
     share: c.share,
   }));
 
-  // Média diária: é o número que dá para projetar o resto do período e
+  // MÃ©dia diÃ¡ria: Ã© o nÃºmero que dÃ¡ para projetar o resto do perÃ­odo e
   // comparar recortes de tamanhos diferentes (uma semana com um ano).
   const mediaDiaria = dias > 0 ? Math.round(resumo.expenseCents / dias) : 0;
 
   return (
     <>
       <PageHeader
-        title="Relatórios"
-        subtitle={`${formatRange(start, end)} · ${dias} ${dias === 1 ? "dia" : "dias"}`}
+        title="RelatÃ³rios"
+        subtitle={`${formatRange(start, end)} Â· ${dias} ${dias === 1 ? "dia" : "dias"}`}
         actions={
           <EntryDialog
-            categories={listCategories()}
-            accounts={listAccounts()}
-            incomeSources={listIncomeSources()}
+            categories={await listCategories()}
+            accounts={await listAccounts()}
+            incomeSources={await listIncomeSources()}
             today={hoje}
           />
         }
@@ -126,27 +126,27 @@ export default async function RelatoriosPage({
 
       <div className="grid gap-xl sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Entradas" cents={resumo.incomeCents} tone="positive" direction="in" />
-        <StatCard label="Saídas" cents={resumo.expenseCents} tone="negative" direction="out" />
+        <StatCard label="SaÃ­das" cents={resumo.expenseCents} tone="negative" direction="out" />
         <StatCard
-          label="Saldo do período"
+          label="Saldo do perÃ­odo"
           cents={resumo.balanceCents}
           tone="auto"
-          hint={`${resumo.transactionCount} ${resumo.transactionCount === 1 ? "lançamento" : "lançamentos"}`}
+          hint={`${resumo.transactionCount} ${resumo.transactionCount === 1 ? "lanÃ§amento" : "lanÃ§amentos"}`}
         />
         <StatCard
-          label="Média por dia"
+          label="MÃ©dia por dia"
           cents={mediaDiaria}
           tone="negative"
-          hint="Gasto médio diário no período"
+          hint="Gasto mÃ©dio diÃ¡rio no perÃ­odo"
         />
       </div>
 
       {resumo.transactionCount === 0 ? (
         <div className="mt-xl">
           <Card>
-            <EmptyState title="Nenhum lançamento neste período">
-              Escolha outro período acima ou registre um lançamento para começar a ver
-              os números aqui.
+            <EmptyState title="Nenhum lanÃ§amento neste perÃ­odo">
+              Escolha outro perÃ­odo acima ou registre um lanÃ§amento para comeÃ§ar a ver
+              os nÃºmeros aqui.
             </EmptyState>
           </Card>
         </div>
@@ -158,16 +158,16 @@ export default async function RelatoriosPage({
             ) : (
               <Card>
                 <CardTitle>Gastos por categoria</CardTitle>
-                <EmptyState title="Sem saídas no período" />
+                <EmptyState title="Sem saÃ­das no perÃ­odo" />
               </Card>
             )}
 
             <TrendChart
-              titulo={serie.bucket === "dia" ? "Dia a dia" : "Mês a mês"}
+              titulo={serie.bucket === "dia" ? "Dia a dia" : "MÃªs a mÃªs"}
               dica={
                 serie.bucket === "dia"
-                  ? "Entradas e saídas por dia"
-                  : "Entradas e saídas por mês"
+                  ? "Entradas e saÃ­das por dia"
+                  : "Entradas e saÃ­das por mÃªs"
               }
               data={serie.pontos}
             />
@@ -175,7 +175,7 @@ export default async function RelatoriosPage({
 
           <div className="mt-xl grid gap-xl lg:grid-cols-3">
             <Card>
-              <CardTitle hint="regra 50/30/20">Divisão dos gastos</CardTitle>
+              <CardTitle hint="regra 50/30/20">DivisÃ£o dos gastos</CardTitle>
               <ul className="flex flex-col gap-xl">
                 {(["NEED", "WANT", "SAVE"] as CategoryKind[]).map((kind) => {
                   const cents = resumo.byKind[kind];
@@ -217,21 +217,21 @@ export default async function RelatoriosPage({
             <Card>
               <CardTitle>Por forma de pagamento</CardTitle>
               {porMetodo.length === 0 ? (
-                <EmptyState title="Sem saídas no período" />
+                <EmptyState title="Sem saÃ­das no perÃ­odo" />
               ) : (
                 <ul className="flex flex-col gap-lg">
                   {porMetodo.map((m) => (
                     <li key={m.method ?? "sem"}>
                       <div className="mb-sm flex items-baseline justify-between gap-md">
                         <span className="text-sm">
-                          {m.method ? METHOD_LABEL[m.method] : "Não informado"}
+                          {m.method ? METHOD_LABEL[m.method] : "NÃ£o informado"}
                         </span>
                         <Money cents={m.totalCents} size="sm" />
                       </div>
                       <ProgressBar
                         value={m.totalCents}
                         max={resumo.expenseCents || 1}
-                        label={`${m.method ? METHOD_LABEL[m.method] : "Não informado"}: ${formatBRL(m.totalCents)}`}
+                        label={`${m.method ? METHOD_LABEL[m.method] : "NÃ£o informado"}: ${formatBRL(m.totalCents)}`}
                         tone="neutral"
                       />
                     </li>
@@ -241,9 +241,9 @@ export default async function RelatoriosPage({
             </Card>
 
             <Card>
-              <CardTitle>Por conta e cartão</CardTitle>
+              <CardTitle>Por conta e cartÃ£o</CardTitle>
               {porConta.length === 0 ? (
-                <EmptyState title="Sem saídas no período" />
+                <EmptyState title="Sem saÃ­das no perÃ­odo" />
               ) : (
                 <ul className="flex flex-col gap-lg">
                   {porConta.map((c, i) => (
@@ -318,3 +318,4 @@ export default async function RelatoriosPage({
     </>
   );
 }
+
