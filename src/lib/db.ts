@@ -28,7 +28,6 @@ import { paletteColor } from "./palette";
  */
 const DB_PATH =
   process.env.FINANCEIRO_DB ?? path.join(process.cwd(), "data", "financeiro.db");
-const DATA_DIR = path.dirname(DB_PATH);
 
 export function resolveFinanceDbPath(userId?: string): string {
   if (!userId || !authConfigured()) {
