@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { verifyEmail } from "@/lib/auth-db";
-import { apiError, apiRateLimited, apiSuccess } from "@/lib/api-response";
+import { apiError, apiRateLimited, apiSuccess, isValidationError } from "@/lib/api-response";
 import { AUTH_RATE_RULES, checkRateLimits, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     }
     return apiSuccess({ message: "E-mail confirmado. Agora você já pode entrar." });
   } catch (error) {
-    if (error instanceof z.ZodError) return apiError(400, "INVALID_EMAIL_VERIFICATION", "Informe um código de 6 dígitos.");
+    if (isValidationError(error)) return apiError(400, "INVALID_EMAIL_VERIFICATION", "Informe um código de 6 dígitos.");
     console.error("[auth/verify-email]", error);
     return apiError(503, "AUTH_SERVICE_UNAVAILABLE", "Não foi possível confirmar o e-mail agora.");
   }

@@ -7,7 +7,7 @@ import {
   registerUser,
 } from "@/lib/auth-db";
 import { sendAccountExistsEmail, sendEmailVerification } from "@/lib/auth-email";
-import { apiError, apiRateLimited, apiSuccess } from "@/lib/api-response";
+import { apiError, apiRateLimited, apiSuccess, isValidationError } from "@/lib/api-response";
 import { AUTH_RATE_RULES, checkRateLimits, clientIp } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -89,7 +89,7 @@ export async function POST(request: Request) {
 
     return apiSuccess({ message: UNIFORM_MESSAGE }, 201);
   } catch (error) {
-    if (error instanceof z.ZodError) {
+    if (isValidationError(error)) {
       return apiError(400, "INVALID_REGISTER_INPUT", "Informe nome, e-mail e senha valida para criar sua conta.");
     }
     console.error("[auth/register]", error);
