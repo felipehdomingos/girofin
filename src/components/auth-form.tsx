@@ -16,6 +16,9 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
 
   const copy = {
     login: ["Entrar", "Acesse seu controle financeiro."],
@@ -28,7 +31,10 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
     return (
       <main className="auth-shell flex min-h-dvh items-center justify-center px-xl py-3xl">
       <div className="auth-wrap w-full">
-        <div className="auth-brand"><BrandLogo /></div>
+        <div className="auth-brand">
+          <BrandLogo withSlogan />
+          <p className="auth-brand__descriptor">Controle Financeiro</p>
+        </div>
       <section className="glass auth-card w-full p-2xl" aria-labelledby="reset-invalid">
           <h1 id="reset-invalid" className="text-2xl font-semibold">
             Link inválido
@@ -80,8 +86,12 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
         throw new Error(structuredError.message ?? "Nao foi possivel concluir.");
       }
       if (!response.ok) throw new Error(data.error ?? "Não foi possível concluir.");
-      if (mode === "login" || mode === "register") router.push("/");
-      else setMessage(data.message ?? "Operação concluída.");
+      if (mode === "login") router.push("/");
+      else if (mode === "register") {
+        setVerificationEmail(email.trim());
+        setAwaitingVerification(true);
+        setMessage(data.message ?? "Enviamos um código de 6 dígitos para o seu e-mail.");
+      } else setMessage(data.message ?? "Operação concluída.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível concluir.");
     } finally {
@@ -89,14 +99,105 @@ export function AuthForm({ mode, token = "" }: { mode: Mode; token?: string }) {
     }
   }
 
+  async function submitVerification(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/v1/auth/verify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verificationEmail, code: verificationCode }),
+      });
+      const data = (await response.json()) as { message?: string; error?: { message?: string } };
+      if (!response.ok) throw new Error(data.error?.message ?? "Não foi possível confirmar o e-mail.");
+      setMessage(data.message ?? "E-mail confirmado. Agora você já pode entrar.");
+      setAwaitingVerification(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível confirmar o e-mail.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function resendVerification() {
+    setPending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/v1/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: verificationEmail }),
+      });
+      const data = (await response.json()) as { message?: string; error?: { message?: string } };
+      if (!response.ok) throw new Error(data.error?.message ?? "Não foi possível reenviar o código.");
+      setVerificationCode("");
+      setMessage(data.message ?? "Enviamos um novo código.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Não foi possível reenviar o código.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (awaitingVerification) {
+    return (
+      <main className="auth-shell flex min-h-dvh items-center justify-center px-xl py-3xl">
+        <div className="auth-wrap w-full">
+          <div className="auth-brand">
+            <BrandLogo withSlogan />
+            <p className="auth-brand__descriptor">Controle Financeiro</p>
+          </div>
+          <section className="glass auth-card w-full p-2xl">
+            <h1 className="text-2xl font-semibold">Confirme seu e-mail</h1>
+            <p className="mt-sm text-sm text-muted-foreground">
+              Enviamos um código de 6 dígitos para <strong>{verificationEmail}</strong>.
+            </p>
+            <form onSubmit={submitVerification} className="mt-2xl flex flex-col gap-lg">
+              <label className="flex flex-col gap-sm text-sm">
+                Código de confirmação
+                <input
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  className="w-full rounded-control border border-border bg-muted px-lg py-md text-center text-xl tracking-[0.35em]"
+                />
+              </label>
+              {error ? <p role="alert" className="rounded-control bg-destructive/10 p-lg text-sm text-neg">{error}</p> : null}
+              {message ? <p role="status" className="rounded-control bg-accent/10 p-lg text-sm text-pos">{message}</p> : null}
+              <button disabled={pending} className="rounded-control bg-accent px-xl py-md text-sm font-semibold text-on-accent disabled:opacity-50">
+                {pending ? "Aguarde..." : "Confirmar e-mail"}
+              </button>
+            </form>
+            <div className="mt-xl flex items-center justify-between gap-lg">
+              <button
+                type="button"
+                onClick={resendVerification}
+                disabled={pending}
+                className="text-xs text-muted-foreground underline disabled:opacity-50"
+              >
+                Não recebeu? Reenviar código
+              </button>
+              <Link href="/login" className="text-xs text-muted-foreground underline">Voltar ao login</Link>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="auth-shell flex min-h-dvh items-center justify-center px-xl py-3xl">
       <div className="auth-wrap w-full">
-        <div className="auth-brand"><BrandLogo /></div>
+        <div className="auth-brand">
+          <BrandLogo withSlogan />
+          <p className="auth-brand__descriptor">Controle Financeiro</p>
+        </div>
       <section className="glass auth-card w-full p-2xl">
-        <p className="mt-lg text-xs font-semibold uppercase tracking-[0.18em] text-accent">
-          Controle Financeiro
-        </p>
         <h1 className="mt-lg text-2xl font-semibold">{copy[0]}</h1>
         <p className="mt-sm text-sm text-muted-foreground">{copy[1]}</p>
 
