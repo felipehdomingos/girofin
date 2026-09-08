@@ -3,6 +3,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { setFinanceUserContext } from "./db";
+import { ensureFinanceSeedData } from "./finance-pg-db";
 
 import {
   authCookieName,
@@ -73,7 +74,10 @@ export async function currentApiUser(request: Request): Promise<AuthUser | null>
  */
 export async function requirePageUser(): Promise<AuthUser | null> {
   const user = await currentUser();
-  if (user) setFinanceUserContext(user.id);
+  if (user) {
+    setFinanceUserContext(user.id);
+    await ensureFinanceSeedData();
+  }
   if (!user && (authConfigured() || process.env.NODE_ENV === "production")) {
     redirect("/login");
   }
@@ -82,7 +86,10 @@ export async function requirePageUser(): Promise<AuthUser | null> {
 
 export async function currentUserId(): Promise<string | null> {
   const user = await currentUser();
-  if (user) setFinanceUserContext(user.id);
+  if (user) {
+    setFinanceUserContext(user.id);
+    await ensureFinanceSeedData();
+  }
   return user?.id ?? null;
 }
 
@@ -92,5 +99,6 @@ export async function requireCurrentUserId(): Promise<string> {
     throw new Error("Sessão de usuário ausente para acesso ao repositório financeiro.");
   }
   setFinanceUserContext(userId);
+  await ensureFinanceSeedData();
   return userId;
 }

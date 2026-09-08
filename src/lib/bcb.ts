@@ -1,13 +1,13 @@
 import "server-only";
 
-import { getDb } from "./db";
+import { getFinancePgDb } from "./finance-pg-db";
 
 /**
  * Taxas reais do Banco Central, via API pública SGS.
  * Doc: https://dadosabertos.bcb.gov.br/dataset/taxas-de-juros
  *
  * Estratégia de resiliência em três camadas, porque a API do BCB cai:
- *   1. cache no SQLite (12h)      -> caso normal, zero rede
+ *   1. cache no PostgreSQL (12h)  -> caso normal, zero rede
  *   2. fetch na API                -> quando o cache vence
  *   3. constante de emergência     -> quando a API falha E não há cache
  *
@@ -84,17 +84,17 @@ async function fetchSeries(code: string, last: number): Promise<SgsPoint[]> {
   }
 }
 
-function readCache(series: string): { annualPct: number; refDate: string; fetchedAt: string } | null {
-  const row = getDb()
+async function readCache(series: string): Promise<{ annualPct: number; refDate: string; fetchedAt: string | Date } | null> {
+  const row = await getFinancePgDb()
     .prepare(`SELECT annualPct, refDate, fetchedAt FROM rate_cache WHERE series = ?`)
     .get(series) as
-    | { annualPct: number; refDate: string; fetchedAt: string }
+    | { annualPct: number; refDate: string; fetchedAt: string | Date }
     | undefined;
   return row ?? null;
 }
 
-function writeCache(series: string, annualPct: number, refDate: string): void {
-  getDb()
+async function writeCache(series: string, annualPct: number, refDate: string): Promise<void> {
+  await getFinancePgDb()
     .prepare(
       `INSERT INTO rate_cache (series, annualPct, refDate, fetchedAt)
        VALUES (?, ?, ?, datetime('now'))
@@ -106,9 +106,8 @@ function writeCache(series: string, annualPct: number, refDate: string): void {
     .run(series, annualPct, refDate);
 }
 
-function isFresh(fetchedAt: string): boolean {
-  // SQLite grava datetime('now') em UTC sem sufixo; o "Z" evita o parse local.
-  const t = Date.parse(fetchedAt.replace(" ", "T") + "Z");
+function isFresh(fetchedAt: string | Date): boolean {
+  const t = fetchedAt instanceof Date ? fetchedAt.getTime() : Date.parse(fetchedAt);
   return Number.isFinite(t) && Date.now() - t < CACHE_TTL_MS;
 }
 
@@ -122,7 +121,7 @@ async function getRate(
   annualize: (values: number[]) => number,
 ): Promise<RateInfo> {
   const code = SERIES[key];
-  const cached = readCache(code);
+  const cached = await readCache(code);
 
   if (cached && isFresh(cached.fetchedAt)) {
     return { annualPct: cached.annualPct, refDate: cached.refDate, source: "cache" };
@@ -137,7 +136,7 @@ async function getRate(
 
     const annualPct = annualize(values);
     const refDate = brToIso(data[data.length - 1].data);
-    writeCache(code, annualPct, refDate);
+    await writeCache(code, annualPct, refDate);
     return { annualPct, refDate, source: "api" };
   } catch {
     // Cache vencido ainda é melhor que constante chutada.

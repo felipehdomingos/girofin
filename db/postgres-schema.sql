@@ -152,6 +152,8 @@ CREATE INDEX IF NOT EXISTS transactions_user_date_idx ON transactions(user_id, d
 CREATE INDEX IF NOT EXISTS transactions_user_category_idx ON transactions(user_id, category_id, date DESC);
 CREATE INDEX IF NOT EXISTS transactions_user_purchase_idx ON transactions(user_id, purchase_id);
 
+-- O repositÃ³rio define o usuÃ¡rio no contexto da conexÃ£o. RLS Ã© uma segunda
+-- barreira: uma consulta sem filtro explÃ­cito ainda nÃ£o pode cruzar usuÃ¡rios.
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT NOT NULL,
   user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
@@ -196,3 +198,32 @@ CREATE TABLE IF NOT EXISTS rate_cache (
   ref_date DATE NOT NULL,
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS bank_cache (
+  cache_key TEXT PRIMARY KEY,
+  payload JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- O repositório define o usuário no contexto da conexão. RLS é uma segunda
+-- barreira: uma consulta sem filtro explícito ainda não pode cruzar usuários.
+DO $$
+DECLARE table_name TEXT;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY[
+    'categories', 'accounts', 'income_sources', 'fixed_bills',
+    'transactions', 'goals', 'scenarios', 'category_rules'
+  ] LOOP
+    EXECUTE format(
+      'ALTER TABLE %I ALTER COLUMN user_id SET DEFAULT current_setting(''app.user_id'', true)::uuid',
+      table_name
+    );
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('DROP POLICY IF EXISTS %I_user_isolation ON %I', table_name, table_name);
+    EXECUTE format(
+      'CREATE POLICY %I_user_isolation ON %I USING (user_id = current_setting(''app.user_id'', true)::uuid) WITH CHECK (user_id = current_setting(''app.user_id'', true)::uuid)',
+      table_name, table_name
+    );
+  END LOOP;
+END $$;
