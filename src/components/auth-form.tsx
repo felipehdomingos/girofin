@@ -13,16 +13,18 @@ export function AuthForm({
   token = "",
   /** Erro vindo do servidor (ex.: `?error=` do callback do Google). */
   initialError = "",
+  initialMessage = "",
 }: {
   mode: Mode;
   token?: string;
   initialError?: string;
+  initialMessage?: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage);
   const [error, setError] = useState(initialError);
   const [pending, setPending] = useState(false);
   const [awaitingVerification, setAwaitingVerification] = useState(false);
@@ -122,6 +124,7 @@ export function AuthForm({
       if (!response.ok) throw new Error(data.error?.message ?? "Não foi possível confirmar o e-mail.");
       setMessage(data.message ?? "E-mail confirmado. Agora você já pode entrar.");
       setAwaitingVerification(false);
+      router.push(`/login?message=${encodeURIComponent(data.message ?? "E-mail confirmado. Agora você já pode entrar.")}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível confirmar o e-mail.");
     } finally {

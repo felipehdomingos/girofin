@@ -18,8 +18,8 @@ const GOOGLE_ERRORS: Record<string, string> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; message?: string }>;
 }) {
-  const { error } = await searchParams;
-  return <AuthForm mode="login" initialError={error ? GOOGLE_ERRORS[error] ?? "" : ""} />;
+  const { error, message } = await searchParams;
+  return <AuthForm mode="login" initialError={error ? GOOGLE_ERRORS[error] ?? "" : ""} initialMessage={message ?? ""} />;
 }

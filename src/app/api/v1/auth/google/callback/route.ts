@@ -7,8 +7,13 @@ import { setAuthSession } from "@/lib/auth-http";
 
 const STATE_COOKIE = "girofin_google_state";
 
+function publicOrigin(request: Request): string {
+  const configured = process.env.APP_URL?.trim();
+  return configured ? new URL(configured).origin : new URL(request.url).origin;
+}
+
 function fail(request: Request, code: string) {
-  return NextResponse.redirect(new URL(`/login?error=${code}`, request.url));
+  return NextResponse.redirect(new URL(`/login?error=${code}`, `${publicOrigin(request)}/`));
 }
 
 export async function GET(request: Request) {
@@ -22,7 +27,7 @@ export async function GET(request: Request) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) return fail(request, "google_unavailable");
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI ?? `${url.origin}/api/v1/auth/google/callback`;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI ?? `${publicOrigin(request)}/api/v1/auth/google/callback`;
   try {
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: "authorization_code" }) });
     if (!tokenResponse.ok) return fail(request, "google_token");
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
     if (profile.aud !== clientId || !["accounts.google.com", "https://accounts.google.com"].includes(profile.iss ?? "") || profile.email_verified !== "true" || !profile.sub || !profile.email) return fail(request, "google_profile");
     const user = await findOrCreateGoogleUser({ subject: profile.sub, email: profile.email, name: profile.name ?? profile.email });
     await setAuthSession(user.id);
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/", `${publicOrigin(request)}/`));
   } catch (error) {
     console.error("[auth/google]", error);
     return fail(request, "google_unavailable");
