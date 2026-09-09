@@ -159,8 +159,8 @@ CREATE INDEX IF NOT EXISTS transactions_user_date_idx ON transactions(user_id, d
 CREATE INDEX IF NOT EXISTS transactions_user_category_idx ON transactions(user_id, category_id, date DESC);
 CREATE INDEX IF NOT EXISTS transactions_user_purchase_idx ON transactions(user_id, purchase_id);
 
--- O repositÃ³rio define o usuÃ¡rio no contexto da conexÃ£o. RLS Ã© uma segunda
--- barreira: uma consulta sem filtro explÃ­cito ainda nÃ£o pode cruzar usuÃ¡rios.
+-- O repositório define o usuário no contexto da conexão. RLS é uma segunda
+-- barreira: uma consulta sem filtro explícito ainda não pode cruzar usuários.
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT NOT NULL,
   user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,

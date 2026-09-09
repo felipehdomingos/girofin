@@ -24,12 +24,12 @@ import {
 import type { ParsedEntry } from "./categorize";
 
 /**
- * Server Actions â€” a Ãºnica porta de escrita do app.
+ * Server Actions — a única porta de escrita do app.
  *
- * PadrÃ£o de todas: validar -> gravar -> revalidar rota -> devolver ActionResult.
- * Nenhuma lanÃ§a exceÃ§Ã£o para o cliente: erro previsto vira `{ ok: false }` com
- * mensagem legÃ­vel, porque exceÃ§Ã£o em Server Action chega no browser como
- * "an error occurred", que nÃ£o ajuda ninguÃ©m.
+ * Padrão de todas: validar -> gravar -> revalidar rota -> devolver ActionResult.
+ * Nenhuma lança exceção para o cliente: erro previsto vira `{ ok: false }` com
+ * mensagem legível, porque exceção em Server Action chega no browser como
+ * "an error occurred", que não ajuda ninguém.
  */
 
 /**
@@ -40,7 +40,7 @@ import type { ParsedEntry } from "./categorize";
  * Server Action tem rota propria com ID estavel que qualquer cliente chama por
  * POST sem passar por layout nenhum.
  */
-const DENIED = { ok: false as const, error: "FaÃ§a login para continuar." };
+const DENIED = { ok: false as const, error: "Faça login para continuar." };
 
 /** Teto e formato das linhas vindas do parser de fatura (client-side). */
 const importInvoiceLinesSchema = z
@@ -58,14 +58,14 @@ const importInvoiceLinesSchema = z
   .max(500);
 
 /**
- * Teto e formato das linhas revisadas do lanÃ§amento rÃ¡pido.
+ * Teto e formato das linhas revisadas do lançamento rápido.
  *
- * Server Action Ã© endpoint HTTP: o array chega direto do cliente, e nÃ£o do
- * preview. Sem schema, `installments` grande passava atÃ© `await repo.createTransaction`,
+ * Server Action é endpoint HTTP: o array chega direto do cliente, e não do
+ * preview. Sem schema, `installments` grande passava até `await repo.createTransaction`,
  * que faz `splitCents(total, parts)` -> `Array.from({ length: parts })` e
- * derrubava o processo por memÃ³ria com um Ãºnico POST. Os limites sÃ£o os mesmos
+ * derrubava o processo por memória com um único POST. Os limites são os mesmos
  * de `transactionSchema` (72 parcelas) e de `importInvoiceLinesSchema` (500
- * linhas), porque Ã© o mesmo tipo de dado entrando pela mesma tabela.
+ * linhas), porque é o mesmo tipo de dado entrando pela mesma tabela.
  */
 const bulkEntriesSchema = z
   .array(
@@ -89,11 +89,11 @@ const bulkEntriesSchema = z
   .min(1)
   .max(500);
 
-/** Teto do texto do lanÃ§amento rÃ¡pido. Ver previewBulkAction. */
+/** Teto do texto do lançamento rápido. Ver previewBulkAction. */
 const MAX_BULK_TEXT_CHARS = 20_000;
 const MAX_BULK_LINES = 500;
 
-/** As telas que dependem de lanÃ§amento. Revalidadas juntas apÃ³s cada escrita. */
+/** As telas que dependem de lançamento. Revalidadas juntas após cada escrita. */
 function revalidateFinance(): void {
   revalidatePath("/");
   revalidatePath("/relatorios");
@@ -106,16 +106,16 @@ function revalidateFinance(): void {
 /**
  * Valida o avatar como data URL de imagem de verdade.
  *
- * Antes a checagem era sÃ³ o prefixo e o comprimento: qualquer coisa depois de
- * "data:image/png;base64," era gravada como se fosse imagem. NÃ£o dÃ¡ XSS (o
- * `<img>` honra o MIME declarado e nÃ£o executa nada), mas a coluna virava
- * armazenamento de conteÃºdo arbitrÃ¡rio â€” 2 MB por usuÃ¡rio de qualquer bytes,
- * servidos de volta pela aplicaÃ§Ã£o para o navegador de quem abre o perfil.
+ * Antes a checagem era só o prefixo e o comprimento: qualquer coisa depois de
+ * "data:image/png;base64," era gravada como se fosse imagem. Não dá XSS (o
+ * `<img>` honra o MIME declarado e não executa nada), mas a coluna virava
+ * armazenamento de conteúdo arbitrário — 2 MB por usuário de qualquer bytes,
+ * servidos de volta pela aplicação para o navegador de quem abre o perfil.
  *
- * Duas checagens alÃ©m do prefixo: o payload precisa ser base64 bem formado, e
+ * Duas checagens além do prefixo: o payload precisa ser base64 bem formado, e
  * os primeiros bytes decodificados precisam bater com a assinatura do formato
- * declarado no MIME. SÃ³ o cabeÃ§alho Ã© decodificado; validar 2 MB de base64 a
- * cada gravaÃ§Ã£o seria trabalho desnecessÃ¡rio.
+ * declarado no MIME. Só o cabeçalho é decodificado; validar 2 MB de base64 a
+ * cada gravação seria trabalho desnecessário.
  */
 function avatarValido(dataUrl: string): boolean {
   if (dataUrl.length > 2_800_000) return false;
@@ -125,7 +125,7 @@ function avatarValido(dataUrl: string): boolean {
 
   const tipo = cabecalho[1].toLowerCase();
   const payload = dataUrl.slice(cabecalho[0].length);
-  // Base64 canÃ´nico: alfabeto padrÃ£o, sem quebra de linha, mÃºltiplo de 4.
+  // Base64 canônico: alfabeto padrão, sem quebra de linha, múltiplo de 4.
   if (payload.length < 4 || payload.length % 4 !== 0) return false;
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(payload)) return false;
 
@@ -143,7 +143,7 @@ function avatarValido(dataUrl: string): boolean {
 
 export async function updateProfileAction(formData: FormData): Promise<ActionResult> {
   const userId = await currentUserId();
-  if (!userId) return { ok: false, error: "FaÃ§a login para atualizar seu perfil." };
+  if (!userId) return { ok: false, error: "Faça login para atualizar seu perfil." };
 
   const name = String(formData.get("name") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
@@ -165,16 +165,16 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
     return { ok: false, error: "Confira telefone, cidade e UF antes de salvar." };
   }
   if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
-    return { ok: false, error: "Informe uma data de nascimento vÃ¡lida." };
+    return { ok: false, error: "Informe uma data de nascimento válida." };
   }
   if (cep && cep.length !== 8) {
-    return { ok: false, error: "O CEP deve ter 8 dÃ­gitos." };
+    return { ok: false, error: "O CEP deve ter 8 dígitos." };
   }
   if (street.length > 120 || district.length > 80 || streetNumber.length > 20 || complement.length > 60) {
-    return { ok: false, error: "Confira o endereÃ§o antes de salvar." };
+    return { ok: false, error: "Confira o endereço antes de salvar." };
   }
   if (avatarDataUrl && !avatarValido(avatarDataUrl)) {
-    return { ok: false, error: "A foto deve ser JPG, PNG ou WebP e ter no mÃ¡ximo 2 MB." };
+    return { ok: false, error: "A foto deve ser JPG, PNG ou WebP e ter no máximo 2 MB." };
   }
 
   try {
@@ -197,11 +197,11 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
     return { ok: true, message: "Perfil atualizado com sucesso." };
   } catch (error) {
     console.error("[profile/update]", error);
-    return { ok: false, error: "NÃ£o foi possÃ­vel salvar o perfil agora. Tente novamente." };
+    return { ok: false, error: "Não foi possível salvar o perfil agora. Tente novamente." };
   }
 }
 
-// -------------------------------------------------------------- lanÃ§amentos
+// -------------------------------------------------------------- lançamentos
 
 export async function createTransactionAction(
   formData: FormData,
@@ -218,8 +218,8 @@ export async function createTransactionAction(
     description: formData.get("description"),
     categoryId: formData.get("categoryId"),
     nature: nature || "VISTA",
-    // SÃ³ faz sentido em PARCELADO; nos outros vai undefined para nÃ£o reprovar
-    // no min(1) com uma mensagem que nÃ£o diz respeito ao que o usuÃ¡rio fez.
+    // Só faz sentido em PARCELADO; nos outros vai undefined para não reprovar
+    // no min(1) com uma mensagem que não diz respeito ao que o usuário fez.
     installments: nature === "PARCELADO" ? formData.get("installments") : undefined,
     amountMode: formData.get("amountMode") || "TOTAL",
     accountId: formData.get("accountId") || null,
@@ -233,9 +233,9 @@ export async function createTransactionAction(
   try {
     const { amount, amountMode, installments } = parsed.data;
 
-    // O repositÃ³rio sempre recebe o TOTAL da compra. Quando o usuÃ¡rio digitou
-    // o valor da parcela, a multiplicaÃ§Ã£o acontece aqui â€” um Ãºnico lugar sabe
-    // dessa diferenÃ§a, e o resto do sistema sÃ³ lida com total.
+    // O repositório sempre recebe o TOTAL da compra. Quando o usuário digitou
+    // o valor da parcela, a multiplicação acontece aqui — um único lugar sabe
+    // dessa diferença, e o resto do sistema só lida com total.
     const totalCents =
       parsed.data.nature === "PARCELADO" && amountMode === "PARCELA"
         ? amount * (installments ?? 1)
@@ -250,17 +250,17 @@ export async function createTransactionAction(
       nature: parsed.data.nature,
       installments,
       accountId: parsed.data.accountId ?? null,
-      // Fonte de renda sÃ³ se aplica a entrada. Deixar num gasto criaria dado
-      // sem sentido ("este almoÃ§o veio do salÃ¡rio CLT").
+      // Fonte de renda só se aplica a entrada. Deixar num gasto criaria dado
+      // sem sentido ("este almoço veio do salário CLT").
       incomeSourceId:
         parsed.data.type === "INCOME" ? (parsed.data.incomeSourceId ?? null) : null,
       method: parsed.data.method ?? null,
       notes: parsed.data.notes ?? null,
     });
 
-    // Custo fixo marcado como "tambÃ©m cadastrar em Contas a pagar": cria a
-    // conta recorrente junto. Falhar aqui NÃƒO derruba o lanÃ§amento â€” o gasto
-    // jÃ¡ foi gravado, e perder o registro por causa do extra seria pior.
+    // Custo fixo marcado como "também cadastrar em Contas a pagar": cria a
+    // conta recorrente junto. Falhar aqui NÃO derruba o lançamento — o gasto
+    // já foi gravado, e perder o registro por causa do extra seria pior.
     if (parsed.data.nature === "FIXO" && formData.get("alsoBill") === "on") {
       const dia = Number(formData.get("billDueDay"));
       if (Number.isInteger(dia) && dia >= 1 && dia <= 31) {
@@ -283,12 +283,12 @@ export async function createTransactionAction(
       }
     }
 
-    // O usuÃ¡rio escolheu a categoria Ã  mÃ£o: isso Ã© o sinal mais confiÃ¡vel que
-    // existe sobre o que essa descriÃ§Ã£o significa. Vira regra aprendida.
+    // O usuário escolheu a categoria à mão: isso é o sinal mais confiável que
+    // existe sobre o que essa descrição significa. Vira regra aprendida.
     learnFromCorrection(parsed.data.description, parsed.data.categoryId);
 
     revalidateFinance();
-    return { ok: true, message: "LanÃ§amento salvo." };
+    return { ok: true, message: "Lançamento salvo." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -342,21 +342,21 @@ export async function deleteTransactionAction(id: string): Promise<ActionResult>
   try {
     await repo.deleteTransaction(id);
     revalidateFinance();
-    return { ok: true, message: "LanÃ§amento excluÃ­do." };
+    return { ok: true, message: "Lançamento excluído." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
 }
 
-// ------------------------------------------------------- lanÃ§amento em lote
+// ------------------------------------------------------- lançamento em lote
 
 /**
- * Fase 1 do lanÃ§amento rÃ¡pido: interpreta o texto e devolve o que ENTENDEU,
+ * Fase 1 do lançamento rápido: interpreta o texto e devolve o que ENTENDEU,
  * sem gravar nada.
  *
- * A confirmaÃ§Ã£o existe porque categorizar sozinho e salvar direto Ã© rÃ¡pido atÃ©
- * errar â€” e um gasto na categoria errada contamina silenciosamente todo o
- * diagnÃ³stico do mÃªs. VocÃª vÃª o palpite, corrige o que estiver torto, e sÃ³ aÃ­ grava.
+ * A confirmação existe porque categorizar sozinho e salvar direto é rápido até
+ * errar — e um gasto na categoria errada contamina silenciosamente todo o
+ * diagnóstico do mês. Você vê o palpite, corrige o que estiver torto, e só aí grava.
  */
 export async function previewBulkAction(
   text: string,
@@ -364,25 +364,25 @@ export async function previewBulkAction(
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
   if (!(await currentUserId())) return DENIED;
 
-  // Server Action recebe o que o cliente serializar: o tipo declarado nÃ£o Ã©
-  // garantia nenhuma em runtime, e `.trim()` num nÃ£o-string estouraria aqui.
+  // Server Action recebe o que o cliente serializar: o tipo declarado não é
+  // garantia nenhuma em runtime, e `.trim()` num não-string estouraria aqui.
   if (typeof text !== "string" || !text.trim()) {
-    return { ok: false, error: "Escreva ao menos um lanÃ§amento." };
+    return { ok: false, error: "Escreva ao menos um lançamento." };
   }
 
   /*
    * Teto de tamanho antes de tocar no parser.
    *
-   * `text` vem direto do cliente (Server Action Ã© rota HTTP) e cada linha passa
-   * por regex com `.*?` preguiÃ§oso seguido de `[\d.,]+` guloso ancorado no fim â€”
-   * padrÃ£o de backtracking quadrÃ¡tico. Sem teto, um texto grande vira minutos de
-   * CPU num processo single-threaded, que Ã© DoS com uma requisiÃ§Ã£o.
+   * `text` vem direto do cliente (Server Action é rota HTTP) e cada linha passa
+   * por regex com `.*?` preguiçoso seguido de `[\d.,]+` guloso ancorado no fim —
+   * padrão de backtracking quadrático. Sem teto, um texto grande vira minutos de
+   * CPU num processo single-threaded, que é DoS com uma requisição.
    */
   if (text.length > MAX_BULK_TEXT_CHARS) {
     return { ok: false, error: "Texto longo demais. Divida em blocos menores." };
   }
   if (text.split("\n").length > MAX_BULK_LINES) {
-    return { ok: false, error: `Envie no mÃ¡ximo ${MAX_BULK_LINES} linhas por vez.` };
+    return { ok: false, error: `Envie no máximo ${MAX_BULK_LINES} linhas por vez.` };
   }
 
   try {
@@ -393,7 +393,7 @@ export async function previewBulkAction(
       return {
         ok: false,
         error:
-          "NÃ£o consegui identificar nenhum lanÃ§amento. Use o formato 'descriÃ§Ã£o valor', um por linha.",
+          "Não consegui identificar nenhum lançamento. Use o formato 'descrição valor', um por linha.",
       };
     }
     return { ok: true, entries };
@@ -402,7 +402,7 @@ export async function previewBulkAction(
   }
 }
 
-/** Fase 2: grava os lanÃ§amentos jÃ¡ revisados. */
+/** Fase 2: grava os lançamentos já revisados. */
 export async function commitBulkAction(
   entries: Array<{
     description: string;
@@ -411,13 +411,13 @@ export async function commitBulkAction(
     categoryId: string;
     date: string;
     nature: "FIXO" | "VISTA" | "PARCELADO";
-    /** SÃ³ em PARCELADO. `amountCents` Ã© o TOTAL da compra. */
+    /** Só em PARCELADO. `amountCents` é o TOTAL da compra. */
     installments: number | null;
     accountId: string | null;
     incomeSourceId: string | null;
     method: "PIX" | "DEBITO" | "CREDITO" | "DINHEIRO" | "BOLETO" | "TRANSFERENCIA" | null;
     matchedKeyword: string | null;
-    /** true quando o usuÃ¡rio trocou a categoria sugerida. */
+    /** true quando o usuário trocou a categoria sugerida. */
     corrected: boolean;
   }>,
 ): Promise<ActionResult> {
@@ -429,15 +429,15 @@ export async function commitBulkAction(
   }
 
   /*
-   * Schema na fronteira: o array chega do cliente, nÃ£o do preview. Sem ele,
+   * Schema na fronteira: o array chega do cliente, não do preview. Sem ele,
    * `installments` sem teto chegava a `await repo.createTransaction`, que aloca um
-   * elemento por parcela em `splitCents` â€” memÃ³ria do processo inteiro por um
-   * POST sÃ³. Os campos e limites espelham `importInvoiceLinesSchema`, que grava
+   * elemento por parcela em `splitCents` — memória do processo inteiro por um
+   * POST só. Os campos e limites espelham `importInvoiceLinesSchema`, que grava
    * o mesmo tipo de dado.
    */
   const parsed = bulkEntriesSchema.safeParse(entries);
   if (!parsed.success) {
-    return { ok: false, error: "LanÃ§amentos invÃ¡lidos ou em quantidade acima do permitido." };
+    return { ok: false, error: "Lançamentos inválidos ou em quantidade acima do permitido." };
   }
 
   try {
@@ -445,7 +445,7 @@ export async function commitBulkAction(
       if (e.nature === "PARCELADO" && (e.installments ?? 0) < 2) {
         return {
           ok: false,
-          error: `"${e.description}" estÃ¡ marcado como parcelado sem nÃºmero de parcelas.`,
+          error: `"${e.description}" está marcado como parcelado sem número de parcelas.`,
         };
       }
     }
@@ -465,9 +465,9 @@ export async function commitBulkAction(
         notes: null,
       });
 
-      // Aprendizado assimÃ©trico, de propÃ³sito: correÃ§Ã£o cria regra nova
-      // (sinal forte), acerto sÃ³ reforÃ§a a regra existente (sinal fraco).
-      // Criar regra a cada acerto encheria a base de sinÃ´nimo redundante.
+      // Aprendizado assimétrico, de propósito: correção cria regra nova
+      // (sinal forte), acerto só reforça a regra existente (sinal fraco).
+      // Criar regra a cada acerto encheria a base de sinônimo redundante.
       if (e.corrected) {
         learnFromCorrection(e.description, e.categoryId);
       } else if (e.matchedKeyword) {
@@ -478,7 +478,7 @@ export async function commitBulkAction(
     revalidateFinance();
     return {
       ok: true,
-      message: `${parsed.data.length} ${parsed.data.length === 1 ? "lanÃ§amento salvo" : "lanÃ§amentos salvos"}.`,
+      message: `${parsed.data.length} ${parsed.data.length === 1 ? "lançamento salvo" : "lançamentos salvos"}.`,
     };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
@@ -584,7 +584,7 @@ export async function updateBudgetAction(
     await repo.updateCategoryBudget(id, parsed.data.budget);
     revalidateFinance();
     revalidatePath("/categorias");
-    return { ok: true, message: "OrÃ§amento atualizado." };
+    return { ok: true, message: "Orçamento atualizado." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -602,7 +602,7 @@ export async function createBillAction(formData: FormData): Promise<ActionResult
     name: formData.get("name"),
     recurrence,
     amount: formData.get("amount"),
-    // Campo do outro tipo de recorrÃªncia vai como undefined: mandar string
+    // Campo do outro tipo de recorrência vai como undefined: mandar string
     // vazia faria o coerce virar 0 e reprovar no min(1) com erro confuso.
     dueDay: recurrence === "MONTHLY" ? formData.get("dueDay") : undefined,
     dueDate: recurrence === "ONCE" ? formData.get("dueDate") : undefined,
@@ -705,11 +705,11 @@ export async function payBillAction(formData: FormData): Promise<ActionResult> {
 }
 
 /**
- * QuitaÃ§Ã£o em um clique, pelo valor previsto e na data de hoje.
+ * Quitação em um clique, pelo valor previsto e na data de hoje.
  *
- * Existe separado do formulÃ¡rio porque a maioria das contas tem valor fixo:
- * abrir formulÃ¡rio para confirmar um nÃºmero que jÃ¡ estÃ¡ na tela Ã© atrito puro.
- * Conta variÃ¡vel continua indo pelo formulÃ¡rio, onde o valor real Ã© informado.
+ * Existe separado do formulário porque a maioria das contas tem valor fixo:
+ * abrir formulário para confirmar um número que já está na tela é atrito puro.
+ * Conta variável continua indo pelo formulário, onde o valor real é informado.
  */
 export async function payBillQuickAction(
   billId: string,
@@ -720,7 +720,7 @@ export async function payBillQuickAction(
 
   try {
     const bill = await repo.getBill(billId);
-    if (!bill) return { ok: false, error: "Conta nÃ£o encontrada." };
+    if (!bill) return { ok: false, error: "Conta não encontrada." };
 
     await repo.payBill({
       billId,
@@ -737,11 +737,11 @@ export async function payBillQuickAction(
 }
 
 /**
- * Paga a fatura do cartÃ£o como transferÃªncia entre contas prÃ³prias.
+ * Paga a fatura do cartão como transferência entre contas próprias.
  *
- * NÃ£o usa payBill: aquilo cria uma DESPESA, e as compras do cartÃ£o jÃ¡ foram
- * contadas como gasto no mÃªs do vencimento. Registrar o pagamento como despesa
- * nova dobraria o total do mÃªs.
+ * Não usa payBill: aquilo cria uma DESPESA, e as compras do cartão já foram
+ * contadas como gasto no mês do vencimento. Registrar o pagamento como despesa
+ * nova dobraria o total do mês.
  */
 export async function payCardInvoiceAction(
   cardId: string,
@@ -756,7 +756,7 @@ export async function payCardInvoiceAction(
     return { ok: false, error: "Escolha de qual conta sai o pagamento da fatura." };
   }
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
-    return { ok: false, error: "Valor da fatura invÃ¡lido." };
+    return { ok: false, error: "Valor da fatura inválido." };
   }
 
   try {
@@ -769,8 +769,8 @@ export async function payCardInvoiceAction(
 }
 
 /**
- * Quita um lanÃ§amento que estava agendado (data futura).
- * Atualiza a linha existente â€” criar outra contaria o gasto duas vezes.
+ * Quita um lançamento que estava agendado (data futura).
+ * Atualiza a linha existente — criar outra contaria o gasto duas vezes.
  */
 export async function payScheduledAction(
   transactionId: string,
@@ -785,7 +785,7 @@ export async function payScheduledAction(
     return { ok: false, error: "Escolha de qual conta esse pagamento sai." };
   }
   if (!Number.isInteger(amountCents) || amountCents <= 0) {
-    return { ok: false, error: "Valor invÃ¡lido." };
+    return { ok: false, error: "Valor inválido." };
   }
 
   try {
@@ -804,19 +804,19 @@ export async function payScheduledAction(
 }
 
 /**
- * Grava as compras lidas de uma fatura de cartÃ£o.
+ * Grava as compras lidas de uma fatura de cartão.
  *
- * Recebe as linhas JÃ REVISADAS pelo usuÃ¡rio â€” o PDF Ã© lido no navegador e
+ * Recebe as linhas JÁ REVISADAS pelo usuário — o PDF é lido no navegador e
  * nunca chega aqui, nem a senha dele.
  *
- * Duas regras que decidem em qual mÃªs cada linha cai:
+ * Duas regras que decidem em qual mês cada linha cai:
  *
- * 1. Compra Ã  vista e a PARCELA DESTE MÃŠS entram na fatura corrente, via a
- *    regra de ciclo do cartÃ£o (compra depois do fechamento vai para a fatura
- *    seguinte) â€” a mesma usada no lanÃ§amento manual.
- * 2. Parcela "3/10" significa que 3 jÃ¡ foram cobradas e 7 ainda vÃªm. SÃ³ as que
- *    FALTAM sÃ£o criadas: as passadas jÃ¡ estÃ£o nas faturas anteriores, e
- *    recriÃ¡-las contaria o mesmo dinheiro duas vezes.
+ * 1. Compra à vista e a PARCELA DESTE MÊS entram na fatura corrente, via a
+ *    regra de ciclo do cartão (compra depois do fechamento vai para a fatura
+ *    seguinte) — a mesma usada no lançamento manual.
+ * 2. Parcela "3/10" significa que 3 já foram cobradas e 7 ainda vêm. Só as que
+ *    FALTAM são criadas: as passadas já estão nas faturas anteriores, e
+ *    recriá-las contaria o mesmo dinheiro duas vezes.
  */
 export async function importInvoiceAction(
   cardId: string,
@@ -848,7 +848,7 @@ export async function importInvoiceAction(
   try {
     const card = await repo.getAccount(cardId);
     if (!card || card.kind !== "CARTAO") {
-      return { ok: false, error: "CartÃ£o nÃ£o encontrado." };
+      return { ok: false, error: "Cartão não encontrado." };
     }
 
     let criados = 0;
@@ -859,11 +859,11 @@ export async function importInvoiceAction(
       if (l.amountCents === 0 || !l.description.trim() || !l.categoryId) continue;
 
       /*
-       * Estorno: a loja devolveu o dinheiro. Entra como ENTRADA no cartÃ£o, que
-       * Ã© literalmente o que acontece â€” o valor volta para o limite e abate a
-       * fatura. LanÃ§ar como despesa negativa nÃ£o daria certo: os totais do mÃªs
-       * somam despesas, e um valor negativo no meio deles some do relatÃ³rio em
-       * vez de aparecer como devoluÃ§Ã£o.
+       * Estorno: a loja devolveu o dinheiro. Entra como ENTRADA no cartão, que
+       * é literalmente o que acontece — o valor volta para o limite e abate a
+       * fatura. Lançar como despesa negativa não daria certo: os totais do mês
+       * somam despesas, e um valor negativo no meio deles some do relatório em
+       * vez de aparecer como devolução.
        */
       if (l.amountCents < 0) {
         await repo.createTransaction({
@@ -888,7 +888,7 @@ export async function importInvoiceAction(
           : 0;
 
       if (restantes === 0) {
-        // Ã€ vista, ou Ãºltima parcela: uma linha sÃ³.
+        // À vista, ou última parcela: uma linha só.
         await repo.createTransaction({
           type: "EXPENSE",
           amountCents: l.amountCents,
@@ -907,9 +907,9 @@ export async function importInvoiceAction(
       } else {
         /*
          * Parcelada com parcelas a vencer. createTransaction divide um TOTAL,
-         * mas aqui jÃ¡ se conhece o valor exato de cada parcela â€” multiplicar
+         * mas aqui já se conhece o valor exato de cada parcela — multiplicar
          * para "recompor" o total e deixar dividir de novo introduziria erro de
-         * centavo. Por isso cada parcela restante Ã© criada individualmente.
+         * centavo. Por isso cada parcela restante é criada individualmente.
          */
         for (let k = 0; k <= restantes; k++) {
           await repo.createTransaction({
@@ -938,10 +938,10 @@ export async function importInvoiceAction(
       message:
         `${criados} ${criados === 1 ? "compra importada" : "compras importadas"}` +
         (parcelasFuturas > 0
-          ? ` Â· ${parcelasFuturas} parcela${parcelasFuturas === 1 ? "" : "s"} agendada${parcelasFuturas === 1 ? "" : "s"} para os prÃ³ximos meses`
+          ? ` · ${parcelasFuturas} parcela${parcelasFuturas === 1 ? "" : "s"} agendada${parcelasFuturas === 1 ? "" : "s"} para os próximos meses`
           : "") +
         (estornos > 0
-          ? ` Â· ${estornos} estorno${estornos === 1 ? "" : "s"} abatido${estornos === 1 ? "" : "s"} da fatura`
+          ? ` · ${estornos} estorno${estornos === 1 ? "" : "s"} abatido${estornos === 1 ? "" : "s"} da fatura`
           : ""),
     };
   } catch (e) {
@@ -999,15 +999,15 @@ export async function createAccountAction(formData: FormData): Promise<ActionRes
 }
 
 /**
- * Edita conta/cartÃ£o. Mesma validaÃ§Ã£o do cadastro â€” o formulÃ¡rio Ã© o mesmo,
- * sÃ³ muda o destino.
+ * Edita conta/cartão. Mesma validação do cadastro — o formulário é o mesmo,
+ * só muda o destino.
  */
 export async function updateAccountAction(formData: FormData): Promise<ActionResult> {
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
   if (!(await currentUserId())) return DENIED;
 
   const id = String(formData.get("id") ?? "");
-  if (!id) return { ok: false, error: "Registro nÃ£o identificado." };
+  if (!id) return { ok: false, error: "Registro não identificado." };
 
   const kind = formData.get("kind");
 
@@ -1046,7 +1046,7 @@ export async function updateAccountAction(formData: FormData): Promise<ActionRes
     });
     revalidateFinance();
     revalidatePath("/configuracoes");
-    return { ok: true, message: "AlteraÃ§Ãµes salvas." };
+    return { ok: true, message: "Alterações salvas." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1060,7 +1060,7 @@ export async function deleteAccountAction(id: string): Promise<ActionResult> {
     await repo.deleteAccount(id);
     revalidateFinance();
     revalidatePath("/carteiras");
-    return { ok: true, message: "Carteira excluÃ­da. Os lanÃ§amentos foram mantidos." };
+    return { ok: true, message: "Carteira excluída. Os lançamentos foram mantidos." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1132,7 +1132,7 @@ export async function deleteIncomeSourceAction(id: string): Promise<ActionResult
     await repo.deleteIncomeSource(id);
     revalidateFinance();
     revalidatePath("/carteiras");
-    return { ok: true, message: "Fonte excluÃ­da. Os lanÃ§amentos foram mantidos." };
+    return { ok: true, message: "Fonte excluída. Os lançamentos foram mantidos." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1146,7 +1146,7 @@ export async function deletePurchaseAction(purchaseId: string): Promise<ActionRe
   try {
     await repo.deletePurchase(purchaseId);
     revalidateFinance();
-    return { ok: true, message: "Compra e todas as parcelas excluÃ­das." };
+    return { ok: true, message: "Compra e todas as parcelas excluídas." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1188,7 +1188,7 @@ export async function deleteBillAction(id: string): Promise<ActionResult> {
   try {
     await repo.deleteBill(id);
     revalidateFinance();
-    return { ok: true, message: "Conta excluÃ­da." };
+    return { ok: true, message: "Conta excluída." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1231,12 +1231,12 @@ export async function addToGoalAction(
   if (!(await currentUserId())) return DENIED;
 
   const parsed = goalSchema.pick({ target: true }).safeParse({ target: amount });
-  if (!parsed.success) return { ok: false, error: "Valor invÃ¡lido." };
+  if (!parsed.success) return { ok: false, error: "Valor inválido." };
 
   try {
     await repo.addToGoal(id, parsed.data.target);
     revalidatePath("/economia");
-    return { ok: true, message: "Valor somado Ã  meta." };
+    return { ok: true, message: "Valor somado à meta." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1278,13 +1278,13 @@ export async function deleteGoalAction(id: string): Promise<ActionResult> {
   try {
     await repo.deleteGoal(id);
     revalidatePath("/economia");
-    return { ok: true, message: "Meta excluÃ­da." };
+    return { ok: true, message: "Meta excluída." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
 }
 
-// ----------------------------------------------------------------- cenÃ¡rios
+// ----------------------------------------------------------------- cenários
 
 export async function createScenarioAction(formData: FormData): Promise<ActionResult> {
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
@@ -1315,7 +1315,7 @@ export async function createScenarioAction(formData: FormData): Promise<ActionRe
       showReal: parsed.data.showReal,
     });
     revalidatePath("/investimentos");
-    return { ok: true, message: "CenÃ¡rio criado." };
+    return { ok: true, message: "Cenário criado." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1365,19 +1365,19 @@ export async function deleteScenarioAction(id: string): Promise<ActionResult> {
   try {
     await repo.deleteScenario(id);
     revalidatePath("/investimentos");
-    return { ok: true, message: "CenÃ¡rio excluÃ­do." };
+    return { ok: true, message: "Cenário excluído." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
 }
 
-// ------------------------------------------------- adaptadores p/ formulÃ¡rio
+// ------------------------------------------------- adaptadores p/ formulário
 
 /**
  * `useActionState` chama a action como `(estadoAnterior, formData)`, enquanto
- * as actions acima recebem sÃ³ o `formData` â€” assinatura mais simples para quem
- * chama direto (botÃ£o, cÃ³digo). Estes adaptadores ligam os dois formatos sem
- * duplicar regra de negÃ³cio.
+ * as actions acima recebem só o `formData` — assinatura mais simples para quem
+ * chama direto (botão, código). Estes adaptadores ligam os dois formatos sem
+ * duplicar regra de negócio.
  */
 type FormAction = (prev: ActionResult, formData: FormData) => Promise<ActionResult>;
 
@@ -1427,48 +1427,48 @@ export const createIncomeSourceForm: FormAction = async (_prev, formData) =>
   createIncomeSourceAction(formData);
 
 /**
- * Traduz erro do banco para linguagem de gente â€” sem devolver o original.
+ * Traduz erro do banco para linguagem de gente — sem devolver o original.
  *
- * A versÃ£o anterior colava a mensagem crua do SQLite na tela para facilitar o
- * relato de bug na beta. O preÃ§o era alto demais: ia junto o nome de tabela e
+ * A versão anterior colava a mensagem crua do SQLite na tela para facilitar o
+ * relato de bug na beta. O preço era alto demais: ia junto o nome de tabela e
  * coluna, o caminho do arquivo do banco e o texto de `assertFinanceStorageMode`,
- * que descreve como o servidor guarda os dados. Isso Ã© mapa do alvo entregue a
+ * que descreve como o servidor guarda os dados. Isso é mapa do alvo entregue a
  * qualquer um que consiga provocar um erro.
  *
- * O relato continua possÃ­vel pelo ID de correlaÃ§Ã£o: o mesmo cÃ³digo aparece no
- * log do servidor, com a exceÃ§Ã£o inteira. Quem usa informa oito caracteres;
+ * O relato continua possível pelo ID de correlação: o mesmo código aparece no
+ * log do servidor, com a exceção inteira. Quem usa informa oito caracteres;
  * quem investiga acha o erro completo.
  *
- * Os casos PREVISTOS continuam com mensagem amigÃ¡vel â€” ali a traduÃ§Ã£o ajuda,
- * porque "UNIQUE constraint failed: categories.name" nÃ£o diz nada a ninguÃ©m.
+ * Os casos PREVISTOS continuam com mensagem amigável — ali a tradução ajuda,
+ * porque "UNIQUE constraint failed: categories.name" não diz nada a ninguém.
  */
 function mensagemDeErro(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
 
   if (raw.includes("UNIQUE constraint failed: categories.name")) {
-    return "JÃ¡ existe uma categoria com esse nome.";
+    return "Já existe uma categoria com esse nome.";
   }
   if (raw.includes("UNIQUE constraint failed: accounts.name")) {
-    return "JÃ¡ existe uma conta ou cartÃ£o com esse apelido. Use outro nome.";
+    return "Já existe uma conta ou cartão com esse apelido. Use outro nome.";
   }
   if (raw.includes("UNIQUE constraint failed: income_sources.name")) {
-    return "JÃ¡ existe uma empresa com esse nome.";
+    return "Já existe uma empresa com esse nome.";
   }
   if (raw.includes("FOREIGN KEY constraint failed")) {
-    return "Registro relacionado invÃ¡lido ou removido. Recarregue a pÃ¡gina.";
+    return "Registro relacionado inválido ou removido. Recarregue a página.";
   }
   if (raw.includes("CHECK constraint failed: accounts")) {
     return "Valor fora do permitido no cadastro da conta. Confira os campos e tente de novo.";
   }
   if (raw.includes("CHECK constraint failed")) {
-    return "Algum valor estÃ¡ fora do permitido. Confira os campos e tente de novo.";
+    return "Algum valor está fora do permitido. Confira os campos e tente de novo.";
   }
   if (raw.includes("NOT NULL constraint failed")) {
-    return "Faltou preencher um campo obrigatÃ³rio.";
+    return "Faltou preencher um campo obrigatório.";
   }
 
   const id = randomUUID().slice(0, 8);
-  console.error(`[actions] erro nÃ£o tratado ${id}:`, e);
-  return `NÃ£o foi possÃ­vel concluir a operaÃ§Ã£o. Informe o cÃ³digo ${id} ao suporte.`;
+  console.error(`[actions] erro não tratado ${id}:`, e);
+  return `Não foi possível concluir a operação. Informe o código ${id} ao suporte.`;
 }
 

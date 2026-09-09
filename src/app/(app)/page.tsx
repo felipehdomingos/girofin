@@ -36,13 +36,13 @@ import { KIND_LABEL, KIND_TARGET, type CategoryKind } from "@/lib/types";
 import { currentUser, requirePageUser } from "@/lib/auth-http";
 
 /**
- * Resumo do mÃªs â€” a tela que responde "como eu estou?" em cinco segundos.
+ * Resumo do mês — a tela que responde "como eu estou?" em cinco segundos.
  *
- * Server Component: os dados vÃªm do SQLite direto na renderizaÃ§Ã£o, sem
+ * Server Component: os dados vêm do SQLite direto na renderização, sem
  * useEffect e sem estado de loading no cliente. (Guideline nextjs: "Fetch data
  * in Server Components", severidade High.)
  */
-/** LÃª o SQLite a cada requisiÃ§Ã£o â€” sem isso o Next congelaria o estado do build. */
+/** Lê o SQLite a cada requisição — sem isso o Next congelaria o estado do build. */
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
@@ -62,16 +62,16 @@ export default async function DashboardPage() {
   const pending = bills.filter((b) => b.status !== "PAID");
   const overdue = bills.filter((b) => b.status === "OVERDUE");
 
-  // A pergunta que o usuÃ¡rio realmente tem nÃ£o Ã© "quanto sobrou", Ã© "quanto
-  // sobrou DEPOIS do que jÃ¡ tem dono". Esse Ã© o nÃºmero que evita gastar
-  // dinheiro que jÃ¡ estÃ¡ comprometido com boleto em aberto.
+  // A pergunta que o usuário realmente tem não é "quanto sobrou", é "quanto
+  // sobrou DEPOIS do que já tem dono". Esse é o número que evita gastar
+  // dinheiro que já está comprometido com boleto em aberto.
   const reallyFreeCents = summary.balanceCents - openBillsCents;
 
   return (
     <>
       <PageHeader
-        title={user?.name ? `OlÃ¡, ${user.name}` : "Resumo"}
-        subtitle={`${formatMonthLong(month)} Â· dia ${progress.elapsed} de ${progress.total}`}
+        title={user?.name ? `Olá, ${user.name}` : "Resumo"}
+        subtitle={`${formatMonthLong(month)} · dia ${progress.elapsed} de ${progress.total}`}
         actions={
           <EntryDialog
             categories={await listCategories()}
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
           <div>
             <p className="text-sm font-semibold">
               {overdue.length === 1
-                ? `${overdue[0].bill.name} estÃ¡ vencida`
+                ? `${overdue[0].bill.name} está vencida`
                 : `${overdue.length} contas vencidas`}
             </p>
             <p className="mt-xs text-xs text-muted-foreground">
@@ -106,12 +106,12 @@ export default async function DashboardPage() {
 
       <div className="grid gap-xl sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Entradas" cents={summary.incomeCents} tone="positive" direction="in" />
-        <StatCard label="SaÃ­das" cents={summary.expenseCents} tone="negative" direction="out" />
+        <StatCard label="Saídas" cents={summary.expenseCents} tone="negative" direction="out" />
         <StatCard
-          label="Saldo do mÃªs"
+          label="Saldo do mês"
           cents={summary.balanceCents}
           tone="auto"
-          hint={summary.balanceCents < 0 ? "VocÃª gastou mais do que recebeu" : undefined}
+          hint={summary.balanceCents < 0 ? "Você gastou mais do que recebeu" : undefined}
         />
         <StatCard
           label="Livre de verdade"
@@ -119,7 +119,7 @@ export default async function DashboardPage() {
           tone="auto"
           hint={
             openBillsCents > 0
-              ? `JÃ¡ descontadas ${pending.length} ${pending.length === 1 ? "conta" : "contas"} em aberto (${formatBRL(openBillsCents)})`
+              ? `Já descontadas ${pending.length} ${pending.length === 1 ? "conta" : "contas"} em aberto (${formatBRL(openBillsCents)})`
               : "Nenhuma conta em aberto"
           }
         />
@@ -133,8 +133,8 @@ export default async function DashboardPage() {
         <Card>
           <CardTitle hint="regra 50/30/20">Para onde foi o dinheiro</CardTitle>
           {summary.expenseCents === 0 ? (
-            <EmptyState title="Nenhuma saÃ­da neste mÃªs">
-              Assim que vocÃª lanÃ§ar o primeiro gasto, a divisÃ£o aparece aqui.
+            <EmptyState title="Nenhuma saída neste mês">
+              Assim que você lançar o primeiro gasto, a divisão aparece aqui.
             </EmptyState>
           ) : (
             <ul className="flex flex-col gap-xl">
@@ -142,7 +142,7 @@ export default async function DashboardPage() {
                 const cents = summary.byKind[kind];
                 const pct = safePercent(cents, summary.incomeCents || summary.expenseCents);
                 const target = KIND_TARGET[kind];
-                // Poupar acima da meta Ã© bom; gastar acima Ã© ruim. O mesmo
+                // Poupar acima da meta é bom; gastar acima é ruim. O mesmo
                 // "passou do alvo" tem sinal oposto nos dois casos.
                 const over = kind === "SAVE" ? pct < target : pct > target;
 
@@ -183,10 +183,10 @@ export default async function DashboardPage() {
               </Link>
             }
           >
-            PrÃ³ximas contas
+            Próximas contas
           </CardTitle>
           {pending.length === 0 ? (
-            <EmptyState title="Nada em aberto neste mÃªs">
+            <EmptyState title="Nada em aberto neste mês">
               Cadastre suas contas fixas e boletos para acompanhar os vencimentos aqui.
             </EmptyState>
           ) : (
@@ -205,7 +205,7 @@ export default async function DashboardPage() {
                       <span className="block truncate text-sm">{b.bill.name}</span>
                       <span className="text-xs text-muted-foreground">
                         vence {formatDay(b.dueDate)}
-                        {b.bill.variable ? " Â· valor estimado" : ""}
+                        {b.bill.variable ? " · valor estimado" : ""}
                       </span>
                     </span>
                   </span>
@@ -221,7 +221,7 @@ export default async function DashboardPage() {
                       }
                     >
                       {b.status === "OVERDUE"
-                        ? `${Math.abs(b.daysUntilDue)}d atrÃ¡s`
+                        ? `${Math.abs(b.daysUntilDue)}d atrás`
                         : b.status === "DUE_TODAY"
                           ? "hoje"
                           : `em ${b.daysUntilDue}d`}
@@ -237,10 +237,10 @@ export default async function DashboardPage() {
       <div className="mt-xl grid gap-xl lg:grid-cols-2">
         <Card>
           <CardTitle hint={`${summary.byCategory.length} categorias`}>
-            Maiores gastos do mÃªs
+            Maiores gastos do mês
           </CardTitle>
           {summary.byCategory.length === 0 ? (
-            <EmptyState title="Sem gastos lanÃ§ados" />
+            <EmptyState title="Sem gastos lançados" />
           ) : (
             <ul className="flex flex-col gap-lg">
               {summary.byCategory.slice(0, 6).map((c) => (
@@ -260,7 +260,7 @@ export default async function DashboardPage() {
                   <ProgressBar
                     value={c.share}
                     max={100}
-                    label={`${c.category.name}: ${c.share.toFixed(0)}% das saÃ­das`}
+                    label={`${c.category.name}: ${c.share.toFixed(0)}% das saídas`}
                     tone={
                       c.budgetUsedPct !== null && c.budgetUsedPct > 100
                         ? "negative"
@@ -284,11 +284,11 @@ export default async function DashboardPage() {
               </Link>
             }
           >
-            Ãšltimos lanÃ§amentos
+            Últimos lançamentos
           </CardTitle>
           {recent.length === 0 ? (
-            <EmptyState title="Nenhum lanÃ§amento ainda">
-              Escreva â€œmercado 152,30â€ no lanÃ§amento rÃ¡pido e o resto Ã© automÃ¡tico.
+            <EmptyState title="Nenhum lançamento ainda">
+              Escreva “mercado 152,30” no lançamento rápido e o resto é automático.
             </EmptyState>
           ) : (
             <ul className="flex flex-col gap-md">
@@ -302,7 +302,7 @@ export default async function DashboardPage() {
                     <span className="min-w-0">
                       <span className="block truncate text-sm">{t.description}</span>
                       <span className="text-xs text-muted-foreground">
-                        {formatDay(t.date)} Â· {t.category.name}
+                        {formatDay(t.date)} · {t.category.name}
                       </span>
                     </span>
                   </span>
@@ -324,9 +324,9 @@ export default async function DashboardPage() {
         className="mt-xl flex cursor-pointer items-center justify-between gap-lg rounded-card border border-border bg-muted/40 p-xl transition-colors duration-200 hover:border-secondary"
       >
         <span>
-          <span className="block text-sm font-semibold">Onde dÃ¡ para economizar</span>
+          <span className="block text-sm font-semibold">Onde dá para economizar</span>
           <span className="mt-xs block text-xs text-muted-foreground">
-            DiagnÃ³stico do mÃªs com valores concretos e o que cada corte vira investido.
+            Diagnóstico do mês com valores concretos e o que cada corte vira investido.
           </span>
         </span>
         <ArrowRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />

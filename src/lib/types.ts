@@ -115,6 +115,8 @@ export interface Transaction {
   installmentTotal: number | null;
   /** Carteira de onde saiu / para onde entrou. Opcional. */
   accountId: string | null;
+  /** Conta de destino quando o lançamento é uma transferência própria. */
+  transferToAccountId?: string | null;
   /** Só em entradas: qual emprego/fonte gerou a receita. */
   incomeSourceId: string | null;
   /**

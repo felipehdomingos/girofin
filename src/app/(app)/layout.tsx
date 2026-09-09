@@ -9,8 +9,8 @@ export default async function AppLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const user = await requirePageUser();
 
-  // O item "CartÃµes" sÃ³ existe depois que hÃ¡ cartÃ£o cadastrado â€” menu com
-  // seÃ§Ã£o vazia Ã© ruÃ­do. Leitura barata: uma consulta de contas por navegaÃ§Ã£o.
+  // O item "Cartões" só existe depois que há cartão cadastrado — menu com
+  // seção vazia é ruído. Leitura barata: uma consulta de contas por navegação.
   const hasCards = (await listAccounts()).some((a) => a.kind === "CARTAO");
 
   return (
@@ -19,7 +19,7 @@ export default async function AppLayout({
         href="#conteudo"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-control focus:bg-accent focus:px-4 focus:py-2 focus:font-semibold focus:text-on-accent"
       >
-        Pular para o conteÃºdo
+        Pular para o conteúdo
       </a>
 
       <div className="lg:flex">
