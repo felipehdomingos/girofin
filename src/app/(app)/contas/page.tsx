@@ -1,4 +1,4 @@
-﻿import { BillForm } from "@/components/bill-form";
+﻿import { BillFormDialog } from "@/components/bill-form";
 import { BillList } from "@/components/bill-list";
 import { MonthNav } from "@/components/month-nav";
 import { PageHeader, StatCard } from "@/components/ui";
@@ -38,7 +38,12 @@ export default async function ContasPage({
       <PageHeader
         title="Contas a pagar"
         subtitle="Contas fixas, boletos e faturas de cartÃ£o. As contas bancÃ¡rias ficam em ConfiguraÃ§Ãµes."
-        actions={<MonthNav month={month} basePath="/contas" />}
+        actions={
+          <div className="flex flex-wrap items-center gap-md">
+            <MonthNav month={month} basePath="/contas" />
+            <BillFormDialog categories={categories} today={today()} />
+          </div>
+        }
       />
 
       <div className="grid gap-xl sm:grid-cols-3">
@@ -61,9 +66,8 @@ export default async function ContasPage({
         <StatCard label="JÃ¡ pago no mÃªs" cents={paidCents} tone="positive" />
       </div>
 
-      <div className="mt-xl grid gap-xl lg:grid-cols-[1.5fr_1fr]">
+      <div className="mt-xl">
         <BillList bills={bills} accounts={accounts} today={today()} />
-        <BillForm categories={categories} today={today()} />
       </div>
     </>
   );
