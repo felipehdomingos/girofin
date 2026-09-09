@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CalendarClock } from "lucide-react";
 
+import { AddDialog } from "./add-dialog";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
 import { createTransactionForm } from "@/lib/actions";
 import { addMonthsToDate, firstInvoiceDueDate, formatMonthLong } from "@/lib/dates";
@@ -26,10 +27,13 @@ export function CardPurchaseForm({
   card,
   categories,
   today,
+  onSaved,
 }: {
   card: Account;
   categories: Category[];
   today: string;
+  /** Fecha o popup que embrulha este formulário. */
+  onSaved?: () => void;
 }) {
   const [nature, setNature] = useState<"VISTA" | "PARCELADO">("VISTA");
   const [installments, setInstallments] = useState(2);
@@ -70,17 +74,8 @@ export function CardPurchaseForm({
   const passouDaVirada = temCiclo && dia >= card.closingDay!;
 
   return (
-    <section className="glass p-2xl">
-      <h2 className="mb-lg text-sm font-semibold tracking-tight">
-        Lançar compra no {card.name}
-      </h2>
-      <p className="mb-lg text-xs leading-relaxed text-muted-foreground">
-        Só compras deste cartão. Débito, pix e dinheiro entram por{" "}
-        <span className="font-medium">Novo lançamento</span>; boleto e conta fixa,
-        por <span className="font-medium">Contas a pagar</span>.
-      </p>
-
-      <ActionForm action={createTransactionForm} submitLabel="Lançar no cartão">
+    // Sem moldura própria: quem embrulha é o popup, que já dá título e borda.
+    <ActionForm action={createTransactionForm} submitLabel="Lançar no cartão" onSuccess={onSaved}>
         {(state) => (
           <>
             {/* Já respondido pela própria tela: é saída, é crédito, é este cartão. */}
@@ -292,7 +287,23 @@ export function CardPurchaseForm({
             </Field>
           </>
         )}
-      </ActionForm>
-    </section>
+    </ActionForm>
+  );
+}
+
+/** Botão + popup da compra no cartão. Render prop precisa ser client-side. */
+export function CardPurchaseDialog(props: {
+  card: Account;
+  categories: Category[];
+  today: string;
+}) {
+  return (
+    <AddDialog
+      label={`Lançar compra no ${props.card.name}`}
+      title={`Lançar compra no ${props.card.name}`}
+      description="Só compras deste cartão. Débito, pix e dinheiro entram por Novo lançamento; boleto e conta fixa, por Contas a pagar."
+    >
+      {(fechar) => <CardPurchaseForm {...props} onSaved={fechar} />}
+    </AddDialog>
   );
 }

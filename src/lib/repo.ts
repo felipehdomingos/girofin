@@ -150,7 +150,9 @@ export async function createCategory(input: {
 }): Promise<string> {
   const db = getFinancePgDb();
   const id = newId();
-  db.prepare(
+  // `run` é assíncrono: sem o await, a função voltava antes da linha existir e
+  // um erro do banco virava rejeição sem dono.
+  await db.prepare(
     `INSERT INTO categories (id, name, kind, color, icon, budgetCents)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, input.name, input.kind, input.color, input.icon, input.budgetCents);
@@ -161,6 +163,48 @@ export async function updateCategoryBudget(id: string, budgetCents: number | nul
   await getFinancePgDb()
     .prepare(`UPDATE categories SET budgetCents = ? WHERE id = ?`)
     .run(budgetCents, id);
+}
+
+export async function updateCategory(
+  id: string,
+  input: { name: string; kind: CategoryKind; color: string; budgetCents: number | null },
+): Promise<void> {
+  await getFinancePgDb()
+    .prepare(
+      `UPDATE categories SET name = ?, kind = ?, color = ?, budgetCents = ? WHERE id = ?`,
+    )
+    .run(input.name, input.kind, input.color, input.budgetCents, id);
+}
+
+/**
+ * Tira a categoria do caminho, sem nunca perder histórico.
+ *
+ * Categoria com lançamento não pode ser apagada de verdade: `transactions` e
+ * `fixed_bills` têm chave estrangeira para cá, e mesmo que não tivessem, apagar
+ * levaria junto a resposta para "quanto gastei com mercado no ano passado".
+ * Nesse caso ela é ARQUIVADA — some das listas e do seletor, o histórico fica
+ * inteiro. Sem nenhum lançamento, não há o que preservar e a linha vai embora.
+ *
+ * As regras de palavra-chave são da categoria e vão junto nos dois casos: sem
+ * isso, a categoria apagada continuaria sendo sugerida na hora de lançar.
+ */
+export async function deleteCategory(id: string): Promise<"deleted" | "archived"> {
+  const db = getFinancePgDb();
+  const usos = await db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM transactions WHERE categoryId = ?)
+            + (SELECT COUNT(*) FROM fixed_bills WHERE categoryId = ?) AS n`,
+    )
+    .get<{ n: number }>(id, id);
+
+  await db.prepare(`DELETE FROM category_rules WHERE categoryId = ?`).run(id);
+
+  if (Number(usos?.n ?? 0) > 0) {
+    await db.prepare(`UPDATE categories SET archived = 1 WHERE id = ?`).run(id);
+    return "archived";
+  }
+  await db.prepare(`DELETE FROM categories WHERE id = ?`).run(id);
+  return "deleted";
 }
 
 // --------------------------------------------------------------- lanÃ§amentos
@@ -359,6 +403,48 @@ export async function createTransaction(input: NewTransaction): Promise<string> 
 /** Apaga uma compra parcelada inteira (todas as parcelas de uma vez). */
 export async function deletePurchase(purchaseId: string): Promise<void> {
   await getFinancePgDb().prepare(`DELETE FROM transactions WHERE purchaseId = ?`).run(purchaseId);
+}
+
+/**
+ * Corrige um lançamento já feito.
+ *
+ * Mexe só no que é descrição do fato — data, valor, categoria, de onde saiu o
+ * dinheiro. Não mexe em `nature`, `purchaseId` nem no número da parcela: isso
+ * é a ESTRUTURA da compra, e trocar pelo formulário de uma parcela deixaria as
+ * outras órfãs de uma compra que mudou de forma. Parcelamento se refaz
+ * excluindo a compra inteira e lançando de novo.
+ */
+export async function updateTransaction(
+  id: string,
+  input: {
+    type: TxType;
+    amountCents: number;
+    date: string;
+    description: string;
+    categoryId: string;
+    accountId: string | null;
+    incomeSourceId: string | null;
+    method: PaymentMethod | null;
+  },
+): Promise<void> {
+  await getFinancePgDb()
+    .prepare(
+      `UPDATE transactions
+          SET type = ?, amountCents = ?, date = ?, description = ?,
+              categoryId = ?, accountId = ?, incomeSourceId = ?, method = ?
+        WHERE id = ?`,
+    )
+    .run(
+      input.type,
+      input.amountCents,
+      input.date,
+      input.description,
+      input.categoryId,
+      input.accountId,
+      input.incomeSourceId,
+      input.method,
+      id,
+    );
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
@@ -1075,6 +1161,15 @@ export async function createIncomeSource(input: {
   return id;
 }
 
+export async function updateIncomeSource(
+  id: string,
+  input: { name: string; kind: IncomeKind; color: string },
+): Promise<void> {
+  await getFinancePgDb()
+    .prepare(`UPDATE income_sources SET name = ?, kind = ?, color = ? WHERE id = ?`)
+    .run(input.name, input.kind, input.color, id);
+}
+
 export async function deleteIncomeSource(id: string): Promise<void> {
   await getFinancePgDb().prepare(`DELETE FROM income_sources WHERE id = ?`).run(id);
 }
@@ -1172,6 +1267,29 @@ export async function setBillActive(id: string, active: boolean): Promise<void> 
   await getFinancePgDb()
     .prepare(`UPDATE fixed_bills SET active = ? WHERE id = ?`)
     .run(active, id);
+}
+
+export async function updateBill(id: string, input: Omit<Bill, "id">): Promise<void> {
+  await getFinancePgDb()
+    .prepare(
+      `UPDATE fixed_bills
+          SET name = ?, recurrence = ?, amountCents = ?, dueDay = ?, dueDate = ?,
+              categoryId = ?, variable = ?, active = ?, barcode = ?, notes = ?
+        WHERE id = ?`,
+    )
+    .run(
+      input.name,
+      input.recurrence,
+      input.amountCents,
+      input.dueDay,
+      input.dueDate,
+      input.categoryId,
+      input.variable,
+      input.active,
+      input.barcode,
+      input.notes,
+      id,
+    );
 }
 
 export async function deleteBill(id: string): Promise<void> {
@@ -1540,6 +1658,17 @@ export async function createGoal(input: {
   return id;
 }
 
+export async function updateGoal(
+  id: string,
+  input: { name: string; targetCents: number; savedCents: number; deadline: string | null },
+): Promise<void> {
+  await getFinancePgDb()
+    .prepare(
+      `UPDATE goals SET name = ?, targetCents = ?, savedCents = ?, deadline = ? WHERE id = ?`,
+    )
+    .run(input.name, input.targetCents, input.savedCents, input.deadline, id);
+}
+
 export async function addToGoal(id: string, cents: number): Promise<void> {
   await getFinancePgDb()
     .prepare(`UPDATE goals SET savedCents = savedCents + ? WHERE id = ?`)
@@ -1584,6 +1713,27 @@ export async function createScenario(input: Omit<Scenario, "id">): Promise<strin
       input.showReal,
     );
   return id;
+}
+
+export async function updateScenario(id: string, input: Omit<Scenario, "id">): Promise<void> {
+  await getFinancePgDb()
+    .prepare(
+      `UPDATE scenarios
+          SET name = ?, initialCents = ?, monthlyCents = ?, months = ?,
+              rateSource = ?, ratePercentOfIndex = ?, customAnnualRate = ?, showReal = ?
+        WHERE id = ?`,
+    )
+    .run(
+      input.name,
+      input.initialCents,
+      input.monthlyCents,
+      input.months,
+      input.rateSource,
+      input.ratePercentOfIndex,
+      input.customAnnualRate,
+      input.showReal,
+      id,
+    );
 }
 
 export async function deleteScenario(id: string): Promise<void> {

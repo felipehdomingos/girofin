@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS app_users (
   name TEXT NOT NULL,
   phone TEXT,
   birth_date DATE,
+  -- Endereco completo: a nota fiscal de compra exige logradouro, numero e
+  -- bairro, nao so cidade e UF. CEP guardado so com digito.
+  cep TEXT,
+  street TEXT,
+  street_number TEXT,
+  complement TEXT,
+  district TEXT,
   city TEXT,
   state CHAR(2),
   avatar_data_url TEXT,

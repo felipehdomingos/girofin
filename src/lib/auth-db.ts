@@ -76,6 +76,11 @@ export async function ensureAuthSchema(): Promise<void> {
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS birth_date DATE;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS city TEXT;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS state CHAR(2);
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS cep TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS street TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS street_number TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS complement TEXT;
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS district TEXT;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS avatar_data_url TEXT;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS google_subject TEXT;
         CREATE UNIQUE INDEX IF NOT EXISTS app_users_google_subject_idx ON app_users(google_subject) WHERE google_subject IS NOT NULL;
@@ -201,6 +206,13 @@ export interface AuthUser {
   emailVerified: boolean;
   phone?: string | null;
   birthDate?: string | null;
+  /* Endereço completo: existe para a nota fiscal de compra, que exige
+     logradouro, número e bairro — não só cidade e UF. */
+  cep?: string | null;
+  street?: string | null;
+  streetNumber?: string | null;
+  complement?: string | null;
+  district?: string | null;
   city?: string | null;
   state?: string | null;
   avatarDataUrl?: string | null;
@@ -290,7 +302,9 @@ export async function getUserProfileBySession(token: string): Promise<AuthUser |
   await ensureAuthSchema();
   const result = await getPool().query<AuthUser>(
     `SELECT u.id, u.email, u.name, (u.email_verified_at IS NOT NULL) AS "emailVerified",
-            u.phone, u.birth_date AS "birthDate", u.city, u.state,
+            u.phone, u.birth_date AS "birthDate",
+            u.cep, u.street, u.street_number AS "streetNumber",
+            u.complement, u.district, u.city, u.state,
             u.avatar_data_url AS "avatarDataUrl",
             (u.avatar_data_url IS NOT NULL AND u.avatar_data_url <> '') AS "hasAvatar"
        FROM app_sessions s JOIN app_users u ON u.id = s.user_id
@@ -321,6 +335,9 @@ export async function findOrCreateGoogleUser(input: {
   subject: string;
   email: string;
   name: string;
+  /** Foto da conta Google, já convertida em data URL. Só entra se o usuário
+      ainda não tem foto — nunca sobrescreve a que a pessoa escolheu. */
+  avatarDataUrl?: string | null;
 }): Promise<AuthUser> {
   await ensureAuthSchema();
   const email = normalizeEmail(input.email);
@@ -357,11 +374,17 @@ export async function findOrCreateGoogleUser(input: {
         throw new Error("GOOGLE_ACCOUNT_MISMATCH");
       }
       const updated = await client.query<AuthUser>(
-        `UPDATE app_users SET google_subject = $1, email_verified_at = COALESCE(email_verified_at, now()), name = $2
+        `UPDATE app_users
+            SET google_subject = $1,
+                email_verified_at = COALESCE(email_verified_at, now()),
+                name = $2,
+                -- COALESCE na ordem "o que já existe primeiro": foto trocada à
+                -- mão não volta para a do Google a cada login.
+                avatar_data_url = COALESCE(NULLIF(avatar_data_url, ''), $4)
           WHERE id = $3
           RETURNING id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified",
                     phone, birth_date AS "birthDate", city, state, avatar_data_url AS "avatarDataUrl"`,
-        [input.subject, input.name.trim() || user.name, user.id],
+        [input.subject, input.name.trim() || user.name, user.id, input.avatarDataUrl ?? null],
       );
       await client.query("COMMIT");
       return updated.rows[0];
@@ -380,10 +403,13 @@ export async function findOrCreateGoogleUser(input: {
     );
 
     const created = await client.query<AuthUser>(
-      `INSERT INTO app_users (id, email, password_hash, name, email_verified_at, google_subject)
-       VALUES ($1, $2, $3, $4, now(), $5)
+      `INSERT INTO app_users (id, email, password_hash, name, email_verified_at, google_subject, avatar_data_url)
+       VALUES ($1, $2, $3, $4, now(), $5, $6)
        RETURNING id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified"`,
-      [randomUUID(), email, `google$${randomBytes(32).toString("hex")}`, input.name.trim() || email, input.subject],
+      [
+        randomUUID(), email, `google$${randomBytes(32).toString("hex")}`,
+        input.name.trim() || email, input.subject, input.avatarDataUrl ?? null,
+      ],
     );
     await client.query("COMMIT");
     return created.rows[0];
@@ -439,6 +465,11 @@ export async function updateUserProfile(input: {
   name: string;
   phone: string | null;
   birthDate: string | null;
+  cep: string | null;
+  street: string | null;
+  streetNumber: string | null;
+  complement: string | null;
+  district: string | null;
   city: string | null;
   state: string | null;
   avatarDataUrl: string | null;
@@ -447,12 +478,19 @@ export async function updateUserProfile(input: {
   const result = await getPool().query<AuthUser>(
     `UPDATE app_users
         SET name = $1, phone = $2, birth_date = $3, city = $4, state = $5,
-            avatar_data_url = $6
-      WHERE id = $7
+            avatar_data_url = $6, cep = $7, street = $8, street_number = $9,
+            complement = $10, district = $11
+      WHERE id = $12
       RETURNING id, email, name, (email_verified_at IS NOT NULL) AS "emailVerified",
-                phone, birth_date AS "birthDate", city, state,
+                phone, birth_date AS "birthDate",
+                cep, street, street_number AS "streetNumber",
+                complement, district, city, state,
                 avatar_data_url AS "avatarDataUrl"`,
-    [input.name, input.phone, input.birthDate, input.city, input.state, input.avatarDataUrl, input.userId],
+    [
+      input.name, input.phone, input.birthDate, input.city, input.state,
+      input.avatarDataUrl, input.cep, input.street, input.streetNumber,
+      input.complement, input.district, input.userId,
+    ],
   );
   if (!result.rows[0]) throw new Error("USER_NOT_FOUND");
   return result.rows[0];

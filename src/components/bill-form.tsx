@@ -2,9 +2,28 @@
 
 import { useState } from "react";
 
+import { AddDialog, EditDialog } from "./add-dialog";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
-import { createBillForm } from "@/lib/actions";
-import { KIND_LABEL, type Category } from "@/lib/types";
+import { createBillForm, updateBillForm } from "@/lib/actions";
+import { KIND_LABEL, type Bill, type Category } from "@/lib/types";
+
+/**
+ * Botão + popup do cadastro de conta.
+ *
+ * Vive aqui, e não na página, porque `AddDialog` recebe os filhos como função
+ * — e função não atravessa a fronteira de Server Component. Sendo este arquivo
+ * "use client", o render prop fica todo do lado do cliente.
+ */
+export function BillFormDialog(props: { categories: Category[]; today: string }) {
+  return (
+    <AddDialog
+      label="Cadastrar conta"
+      description="Para boleto e conta fixa. A fatura do cartão aparece aqui sozinha, a partir das compras — não cadastre."
+    >
+      {(fechar) => <BillForm {...props} onSaved={fechar} />}
+    </AddDialog>
+  );
+}
 
 /**
  * Cadastro de conta a pagar. Um formulário só para os dois casos:
@@ -17,34 +36,36 @@ import { KIND_LABEL, type Category } from "@/lib/types";
 export function BillForm({
   categories,
   today,
+  onSaved,
+  bill,
 }: {
   categories: Category[];
   today: string;
+  /** Fecha o popup que embrulha este formulário. */
+  onSaved?: () => void;
+  /** Conta existente: os mesmos campos passam a editar em vez de cadastrar. */
+  bill?: Bill;
 }) {
-  const [recurrence, setRecurrence] = useState<"MONTHLY" | "ONCE">("MONTHLY");
+  const [recurrence, setRecurrence] = useState<"MONTHLY" | "ONCE">(
+    bill?.recurrence ?? "MONTHLY",
+  );
 
   const grouped = (["NEED", "WANT", "SAVE"] as const).map((kind) => ({
     kind,
     items: categories.filter((c) => c.kind === kind),
   }));
 
+  // Sem moldura própria: quem embrulha é o popup, que já dá título e borda.
+  // O aviso sobre fatura de cartão desce como descrição do popup.
   return (
-    <section className="glass p-2xl">
-      <h2 className="mb-lg text-sm font-semibold tracking-tight">Cadastrar conta</h2>
-
-      {/*
-        Fatura de cartão NÃO se cadastra aqui. Ela já entra sozinha nesta lista,
-        calculada a partir das compras. Cadastrada à mão viraria uma segunda
-        cobrança do mesmo dinheiro — e das duas, só uma some quando você paga.
-      */}
-      <p className="mb-lg text-xs leading-relaxed text-muted-foreground">
-        Para boleto e conta fixa. A fatura do cartão aparece aqui sozinha, a
-        partir das compras — não cadastre.
-      </p>
-
-      <ActionForm action={createBillForm} submitLabel="Cadastrar">
+    <ActionForm
+      action={bill ? updateBillForm : createBillForm}
+      submitLabel={bill ? "Salvar conta" : "Cadastrar"}
+      onSuccess={onSaved}
+    >
         {(state) => (
           <>
+            {bill ? <input type="hidden" name="id" value={bill.id} /> : null}
             <Field label="Tipo" name="recurrence" required>
               <Select
                 id="recurrence"
@@ -72,6 +93,7 @@ export function BillForm({
                 required
                 maxLength={60}
                 placeholder={recurrence === "MONTHLY" ? "Aluguel" : "IPVA 2026"}
+                defaultValue={bill?.name}
               />
             </Field>
 
@@ -89,6 +111,9 @@ export function BillForm({
                 inputMode="decimal"
                 placeholder="1.850,00"
                 className="font-mono"
+                defaultValue={
+                  bill ? (bill.amountCents / 100).toFixed(2).replace(".", ",") : undefined
+                }
               />
             </Field>
 
@@ -107,7 +132,7 @@ export function BillForm({
                   min={1}
                   max={31}
                   required
-                  defaultValue={10}
+                  defaultValue={bill?.dueDay ?? 10}
                   className="font-mono"
                 />
               </Field>
@@ -123,7 +148,7 @@ export function BillForm({
                   name="dueDate"
                   type="date"
                   required
-                  defaultValue={today}
+                  defaultValue={bill?.dueDate ?? today}
                 />
               </Field>
             )}
@@ -134,7 +159,7 @@ export function BillForm({
               required
               error={fieldError(state, "categoryId")}
             >
-              <Select id="categoryId" name="categoryId" required>
+              <Select id="categoryId" name="categoryId" required defaultValue={bill?.categoryId}>
                 {grouped.map(({ kind, items }) =>
                   items.length ? (
                     <optgroup key={kind} label={KIND_LABEL[kind]}>
@@ -160,6 +185,7 @@ export function BillForm({
                 name="barcode"
                 maxLength={60}
                 className="font-mono text-xs"
+                defaultValue={bill?.barcode ?? ""}
               />
             </Field>
 
@@ -167,13 +193,32 @@ export function BillForm({
               <input
                 type="checkbox"
                 name="variable"
+                defaultChecked={bill?.variable}
                 className="size-4 cursor-pointer accent-[var(--color-accent)]"
               />
               O valor muda todo mês (luz, água, telefone)
             </label>
           </>
         )}
-      </ActionForm>
-    </section>
+    </ActionForm>
+  );
+}
+
+/** Botão + popup para corrigir uma conta já cadastrada. */
+export function BillEditDialog({
+  bill,
+  categories,
+  today,
+}: {
+  bill: Bill;
+  categories: Category[];
+  today: string;
+}) {
+  return (
+    <EditDialog title={`Editar ${bill.name}`} ariaLabel={`Editar ${bill.name}`}>
+      {(fechar) => (
+        <BillForm bill={bill} categories={categories} today={today} onSaved={fechar} />
+      )}
+    </EditDialog>
   );
 }

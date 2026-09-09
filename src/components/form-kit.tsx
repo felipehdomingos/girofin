@@ -1,6 +1,13 @@
 "use client";
 
-import { cloneElement, isValidElement, useActionState, type ReactNode } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useActionState,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 
 import type { ActionResult } from "@/lib/validation";
@@ -113,13 +120,27 @@ export function ActionForm({
   children,
   submitLabel,
   className = "",
+  onSuccess,
 }: {
   action: (state: ActionResult, formData: FormData) => Promise<ActionResult>;
   children: (state: ActionResult) => ReactNode;
   submitLabel: string;
   className?: string;
+  /** Chamado quando uma submissão volta bem-sucedida. É o que fecha o popup. */
+  onSuccess?: () => void;
 }) {
   const [state, formAction, pending] = useActionState(action, IDLE);
+
+  // `useActionState` devolve um objeto novo a cada submissão, então comparar a
+  // identidade distingue "acabou de dar certo" de "continua no mesmo estado".
+  // Sem isso o efeito dispararia de novo a cada re-render e o popup fecharia
+  // sozinho enquanto a pessoa ainda estivesse lendo o resultado.
+  const ultimoEstado = useRef(state);
+  useEffect(() => {
+    if (state === ultimoEstado.current) return;
+    ultimoEstado.current = state;
+    if (state.ok && state.message) onSuccess?.();
+  }, [state, onSuccess]);
 
   return (
     <form action={formAction} className={`flex flex-col gap-lg ${className}`}>

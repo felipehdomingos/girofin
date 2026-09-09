@@ -166,6 +166,61 @@ body[data-theme="light"] {
     border-radius: 12px;
     box-shadow: var(--shadow-md);
   }
+
+  /*
+   * Splash de carregamento. Repete o gradiente de `.auth-shell` para a
+   * transição sair da tela de login sem troca de fundo.
+   */
+  .splash {
+    display: flex;
+    min-height: 100dvh;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 24px;
+    background: radial-gradient(circle at 50% 0, rgba(79, 116, 232, 0.12), transparent 45%), var(--color-background);
+  }
+
+  .splash__logo {
+    width: 144px;
+    animation: splash-breathe 1.8s ease-in-out infinite;
+  }
+
+  .splash__label {
+    color: var(--color-muted-foreground);
+    font-size: 13px;
+  }
+
+  /* Barra indeterminada: não promete percentual que não sabemos. */
+  .splash__track {
+    position: relative;
+    overflow: hidden;
+    width: 180px;
+    max-width: 60vw;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--color-border);
+  }
+
+  .splash__bar {
+    position: absolute;
+    inset-block: 0;
+    width: 40%;
+    border-radius: 999px;
+    background: var(--color-accent);
+    animation: splash-slide 1.4s ease-in-out infinite;
+  }
+
+  @keyframes splash-breathe {
+    0%, 100% { opacity: 0.75; transform: scale(0.97); }
+    50%      { opacity: 1;    transform: scale(1); }
+  }
+
+  @keyframes splash-slide {
+    0%   { left: -40%; }
+    100% { left: 100%; }
+  }
 }
 
 /*

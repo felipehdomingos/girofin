@@ -12,12 +12,15 @@ import {
 } from "lucide-react";
 
 import { ActionButton } from "./action-button";
-import { BankLogo, BankPicker, ColorPicker, shortBankName } from "./bank-picker";
+import { BankLogo, BankPicker, shortBankName } from "./bank-picker";
+import { ColorPicker } from "./color-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
+import { AddDialog, EditDialog } from "./add-dialog";
 import { Badge, Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
 import {
   createAccountForm,
   createIncomeSourceForm,
+  updateIncomeSourceForm,
   updateAccountForm,
   deleteAccountAction,
   deleteIncomeSourceAction,
@@ -122,6 +125,7 @@ function SecaoContas({
   const [kind, setKind] = useState<Exclude<AccountKind, "CARTAO">>("CORRENTE");
   /** Conta sendo editada; null = formulário em modo de cadastro. */
   const [editando, setEditando] = useState<AccountWithBalance | null>(null);
+  const [dialogAberto, setDialogAberto] = useState(false);
 
   /**
    * Entra em modo de edição carregando os valores atuais no formulário.
@@ -130,6 +134,7 @@ function SecaoContas({
    */
   function editar(a: AccountWithBalance) {
     setEditando(a);
+    setDialogAberto(true);
     setNome(a.name);
     setColor(a.color);
     setKind(a.kind === "CARTAO" ? "CORRENTE" : a.kind);
@@ -154,10 +159,168 @@ function SecaoContas({
     setBank(null);
   }
 
+  // Fechar por qualquer caminho (Esc, X, backdrop, sucesso) larga a conta em
+  // edição. Senão o próximo "Nova conta" abriria com os dados da anterior.
+  function mudarDialog(aberto: boolean) {
+    setDialogAberto(aberto);
+    if (!aberto) cancelarEdicao();
+  }
+
   const totalCents = contas.reduce((acc, a) => acc + a.balanceCents, 0);
 
+  const formularioConta = (
+    <AddDialog
+      label="Nova conta"
+      title={editando ? `Editando ${editando.name}` : "Nova conta"}
+      open={dialogAberto}
+      onOpenChange={mudarDialog}
+    >
+      {(fechar) => (
+          <ActionForm
+            key={editando?.id ?? "novo"}
+            action={editando ? updateAccountForm : createAccountForm}
+            submitLabel={editando ? "Salvar alterações" : "Cadastrar conta"}
+            onSuccess={fechar}
+          >
+            {(state) => (
+              <>
+                {editando ? (
+                  <input type="hidden" name="id" value={editando.id} />
+                ) : null}
+                <input type="hidden" name="kind" value={kind} />
+                <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
+                <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
+                <input type="hidden" name="logoUrl" value={bank?.logoUrl ?? ""} />
+
+                <Field
+                  label="Banco"
+                  name="bank"
+                  hint="Lista oficial do Banco Central. Deixe em branco para dinheiro em espécie."
+                >
+                  <BankPicker
+                    banks={banks}
+                    selected={bank}
+                    onSelect={(b) => {
+                      setBank(b);
+                      // Nome curto e legível, nao a razao social do BCB.
+                      if (b && !nome.trim()) setNome(shortBankName(b.fullName));
+                    }}
+                  />
+                </Field>
+
+                <Field
+                  label="Apelido"
+                  name="name"
+                  required
+                  error={fieldError(state, "name")}
+                  hint="É esse nome que aparece na hora de lançar."
+                >
+                  <Input
+                    id="acc-name"
+                    name="name"
+                    required
+                    maxLength={40}
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Itaú corrente"
+                  />
+                </Field>
+
+                <Field label="Tipo" name="kindVisible" required>
+                  <Select
+                    id="acc-kind"
+                    value={kind}
+                    onChange={(e) =>
+                      setKind(e.target.value as Exclude<AccountKind, "CARTAO">)
+                    }
+                    required
+                  >
+                    <option value="CORRENTE">Conta corrente</option>
+                    <option value="POUPANCA">Poupança</option>
+                    <option value="INVESTIMENTO">Investimento</option>
+                    <option value="CARTEIRA">Dinheiro em espécie</option>
+                  </Select>
+                </Field>
+
+                <Field
+                  label={editando ? "Saldo inicial" : "Saldo atual"}
+                  name="opening"
+                  error={fieldError(state, "opening")}
+                  hint={
+                    editando
+                      ? "Este é o saldo de PARTIDA. O saldo de hoje é ele mais entradas menos saídas — mexer aqui reposiciona todo o histórico."
+                      : "Quanto tem hoje. Se estiver no cheque especial, use - na frente (ex: -350,00)."
+                  }
+                >
+                  <Input
+                    id="acc-opening"
+                    name="opening"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    defaultValue={
+                      editando
+                        ? (editando.openingCents / 100).toFixed(2).replace(".", ",")
+                        : ""
+                    }
+                    className="font-mono"
+                  />
+                </Field>
+
+                {kind === "CORRENTE" ? (
+                  <Field
+                    label="Limite do cheque especial"
+                    name="overdraftLimit"
+                    error={fieldError(state, "overdraftLimit")}
+                    hint="Opcional. Com ele o app mostra quanto do limite você já consumiu."
+                  >
+                    <Input
+                      id="acc-overdraft"
+                      name="overdraftLimit"
+                      inputMode="decimal"
+                      placeholder="2.000,00"
+                      defaultValue={
+                        editando?.overdraftLimitCents
+                          ? (editando.overdraftLimitCents / 100).toFixed(2).replace(".", ",")
+                          : ""
+                      }
+                      className="font-mono"
+                    />
+                  </Field>
+                ) : null}
+
+                {kind === "CORRENTE" ? (
+                  <p className="rounded-control border border-border bg-muted/50 p-lg text-[11px] leading-relaxed text-muted-foreground">
+                    O limite do cheque especial <strong>não entra</strong> no seu saldo
+                    disponível. É crédito do banco, não dinheiro seu — somar os dois é
+                    exatamente o que faz alguém gastar o que não tem. Saldo negativo
+                    aparece como dívida, porque é o que ele é.
+                  </p>
+                ) : null}
+
+                <Field
+                  label="Cor"
+                  name="color"
+                  error={fieldError(state, "color")}
+                  hint="Usada nos gráficos."
+                >
+                  <ColorPicker
+                    name="color"
+                    value={color}
+                    onChange={setColor}
+                    palette={VIZ_PALETTE}
+                  />
+                </Field>
+              </>
+            )}
+          </ActionForm>
+      )}
+    </AddDialog>
+  );
+
   return (
-    <div className="grid gap-xl lg:grid-cols-[1.4fr_1fr]">
+    <div className="flex flex-col gap-xl">
+      <div className="flex justify-end">{formularioConta}</div>
+
       <Card>
         <CardTitle hint={`${contas.length} cadastradas`}>
           Contas — onde o seu dinheiro está
@@ -165,7 +328,7 @@ function SecaoContas({
 
         {contas.length === 0 ? (
           <EmptyState title="Nenhuma conta cadastrada">
-            Cadastre ao lado a conta onde cai o seu salário. É o mínimo para
+            Cadastre a conta onde cai o seu salário. É o mínimo para
             começar a lançar: todo gasto sai de algum lugar e toda entrada cai em
             algum lugar.
           </EmptyState>
@@ -276,163 +439,6 @@ function SecaoContas({
         )}
       </Card>
 
-      <Card>
-        <CardTitle
-          hint={
-            editando ? (
-              <button
-                type="button"
-                onClick={cancelarEdicao}
-                className="cursor-pointer underline underline-offset-4 hover:text-foreground"
-              >
-                cancelar edição
-              </button>
-            ) : null
-          }
-        >
-          {editando ? `Editando ${editando.name}` : "Nova conta"}
-        </CardTitle>
-
-        {/* key força o React a remontar o formulário ao trocar de registro.
-            Sem isso os campos não-controlados (saldo, cheque especial) manteriam
-            o valor digitado para OUTRA conta. */}
-        <ActionForm
-          key={editando?.id ?? "novo"}
-          action={editando ? updateAccountForm : createAccountForm}
-          submitLabel={editando ? "Salvar alterações" : "Cadastrar conta"}
-        >
-          {(state) => (
-            <>
-              {editando ? (
-                <input type="hidden" name="id" value={editando.id} />
-              ) : null}
-              <input type="hidden" name="kind" value={kind} />
-              <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
-              <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
-              <input type="hidden" name="logoUrl" value={bank?.logoUrl ?? ""} />
-
-              <Field
-                label="Banco"
-                name="bank"
-                hint="Lista oficial do Banco Central. Deixe em branco para dinheiro em espécie."
-              >
-                <BankPicker
-                  banks={banks}
-                  selected={bank}
-                  onSelect={(b) => {
-                    setBank(b);
-                    // Nome curto e legível, nao a razao social do BCB.
-                    if (b && !nome.trim()) setNome(shortBankName(b.fullName));
-                  }}
-                />
-              </Field>
-
-              <Field
-                label="Apelido"
-                name="name"
-                required
-                error={fieldError(state, "name")}
-                hint="É esse nome que aparece na hora de lançar."
-              >
-                <Input
-                  id="acc-name"
-                  name="name"
-                  required
-                  maxLength={40}
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Itaú corrente"
-                />
-              </Field>
-
-              <Field label="Tipo" name="kindVisible" required>
-                <Select
-                  id="acc-kind"
-                  value={kind}
-                  onChange={(e) =>
-                    setKind(e.target.value as Exclude<AccountKind, "CARTAO">)
-                  }
-                  required
-                >
-                  <option value="CORRENTE">Conta corrente</option>
-                  <option value="POUPANCA">Poupança</option>
-                  <option value="INVESTIMENTO">Investimento</option>
-                  <option value="CARTEIRA">Dinheiro em espécie</option>
-                </Select>
-              </Field>
-
-              <Field
-                label={editando ? "Saldo inicial" : "Saldo atual"}
-                name="opening"
-                error={fieldError(state, "opening")}
-                hint={
-                  editando
-                    ? "Este é o saldo de PARTIDA. O saldo de hoje é ele mais entradas menos saídas — mexer aqui reposiciona todo o histórico."
-                    : "Quanto tem hoje. Se estiver no cheque especial, use - na frente (ex: -350,00)."
-                }
-              >
-                <Input
-                  id="acc-opening"
-                  name="opening"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  defaultValue={
-                    editando
-                      ? (editando.openingCents / 100).toFixed(2).replace(".", ",")
-                      : ""
-                  }
-                  className="font-mono"
-                />
-              </Field>
-
-              {kind === "CORRENTE" ? (
-                <Field
-                  label="Limite do cheque especial"
-                  name="overdraftLimit"
-                  error={fieldError(state, "overdraftLimit")}
-                  hint="Opcional. Com ele o app mostra quanto do limite você já consumiu."
-                >
-                  <Input
-                    id="acc-overdraft"
-                    name="overdraftLimit"
-                    inputMode="decimal"
-                    placeholder="2.000,00"
-                    defaultValue={
-                      editando?.overdraftLimitCents
-                        ? (editando.overdraftLimitCents / 100).toFixed(2).replace(".", ",")
-                        : ""
-                    }
-                    className="font-mono"
-                  />
-                </Field>
-              ) : null}
-
-              {kind === "CORRENTE" ? (
-                <p className="rounded-control border border-border bg-muted/50 p-lg text-[11px] leading-relaxed text-muted-foreground">
-                  O limite do cheque especial <strong>não entra</strong> no seu saldo
-                  disponível. É crédito do banco, não dinheiro seu — somar os dois é
-                  exatamente o que faz alguém gastar o que não tem. Saldo negativo
-                  aparece como dívida, porque é o que ele é.
-                </p>
-              ) : null}
-
-              <Field
-                label="Cor"
-                name="color"
-                error={fieldError(state, "color")}
-                hint="Usada nos gráficos."
-              >
-                <ColorPicker
-                  name="color"
-                  value={color}
-                  onChange={setColor}
-                  palette={VIZ_PALETTE}
-                />
-              </Field>
-            </>
-          )}
-        </ActionForm>
-      </Card>
     </div>
   );
 }
@@ -452,9 +458,11 @@ function SecaoCartoes({
   const [color, setColor] = useState(nextColor);
   const [nome, setNome] = useState("");
   const [editando, setEditando] = useState<AccountWithBalance | null>(null);
+  const [dialogAberto, setDialogAberto] = useState(false);
 
   function editar(c: AccountWithBalance) {
     setEditando(c);
+    setDialogAberto(true);
     setNome(c.name);
     setColor(c.color);
     setBank(
@@ -477,11 +485,192 @@ function SecaoCartoes({
     setBank(null);
   }
 
+  // Fechar por qualquer caminho larga o cartão em edição.
+  function mudarDialog(aberto: boolean) {
+    setDialogAberto(aberto);
+    if (!aberto) cancelarEdicao();
+  }
+
   // Fatura é dívida: o saldo do cartão é negativo, e o valor devido é o módulo.
   const faturaTotal = cartoes.reduce((acc, a) => acc + Math.abs(a.balanceCents), 0);
 
+  const formularioCartao = (
+    <AddDialog
+      label="Novo cartão"
+      title={editando ? `Editando ${editando.name}` : "Novo cartão"}
+      open={dialogAberto}
+      onOpenChange={mudarDialog}
+    >
+      {(fechar) => (
+          <ActionForm
+            key={editando?.id ?? "novo"}
+            action={editando ? updateAccountForm : createAccountForm}
+            submitLabel={editando ? "Salvar alterações" : "Cadastrar cartão"}
+            onSuccess={fechar}
+          >
+            {(state) => (
+              <>
+                {editando ? (
+                  <input type="hidden" name="id" value={editando.id} />
+                ) : null}
+                {/* Tipo fixo: este formulário só cadastra cartão. */}
+                <input type="hidden" name="kind" value="CARTAO" />
+                <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
+                <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
+                <input type="hidden" name="logoUrl" value={bank?.logoUrl ?? ""} />
+
+                <Field label="Banco emissor" name="bank" hint="Lista oficial do Banco Central.">
+                  <BankPicker
+                    banks={banks}
+                    selected={bank}
+                    onSelect={(b) => {
+                      setBank(b);
+                      // Prefixo "Cartao": o apelido e unico, e sem ele o cartao
+                      // colidiria com a conta do mesmo banco.
+                      if (b && !nome.trim()) setNome(shortBankName(b.fullName, "Cartão"));
+                    }}
+                  />
+                </Field>
+
+                <Field
+                  label="Apelido do cartão"
+                  name="name"
+                  required
+                  error={fieldError(state, "name")}
+                  hint="Como você chama no dia a dia."
+                >
+                  <Input
+                    id="card-name"
+                    name="name"
+                    required
+                    maxLength={40}
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Nubank roxinho"
+                  />
+                </Field>
+
+                <Field
+                  label="4 últimos dígitos"
+                  name="last4"
+                  error={fieldError(state, "last4")}
+                  hint="Opcional, para diferenciar dois cartões do mesmo banco. O número completo nunca é pedido."
+                >
+                  <Input
+                    id="card-last4"
+                    name="last4"
+                    inputMode="numeric"
+                    maxLength={4}
+                    pattern="\d{4}"
+                    placeholder="1234"
+                    defaultValue={editando?.last4 ?? ""}
+                    className="w-24 font-mono"
+                  />
+                </Field>
+
+                <Field
+                  label="Limite total"
+                  name="creditLimit"
+                  error={fieldError(state, "creditLimit")}
+                  hint="Opcional. Com ele o app mostra quanto do limite já foi usado."
+                >
+                  <Input
+                    id="card-limit"
+                    name="creditLimit"
+                    inputMode="decimal"
+                    placeholder="5.000,00"
+                    defaultValue={
+                      editando?.creditLimitCents
+                        ? (editando.creditLimitCents / 100).toFixed(2).replace(".", ",")
+                        : ""
+                    }
+                    className="font-mono"
+                  />
+                </Field>
+
+                <div className="grid grid-cols-2 gap-lg">
+                  <Field
+                    label="Fecha dia"
+                    name="closingDay"
+                    required
+                    error={fieldError(state, "closingDay")}
+                  >
+                    <Input
+                      id="card-closing"
+                      name="closingDay"
+                      type="number"
+                      min={1}
+                      max={31}
+                      required
+                      defaultValue={editando?.closingDay ?? 25}
+                      className="font-mono"
+                    />
+                  </Field>
+
+                  <Field
+                    label="Vence dia"
+                    name="dueDay"
+                    required
+                    error={fieldError(state, "dueDay")}
+                  >
+                    <Input
+                      id="card-due"
+                      name="dueDay"
+                      type="number"
+                      min={1}
+                      max={31}
+                      required
+                      defaultValue={editando?.dueDay ?? 5}
+                      className="font-mono"
+                    />
+                  </Field>
+                </div>
+
+                <p className="rounded-control border border-border bg-muted/50 p-lg text-[11px] leading-relaxed text-muted-foreground">
+                  Compra feita <strong>até</strong> o dia do fechamento entra na
+                  fatura que está fechando. Depois disso, já cai na seguinte — é
+                  assim que o app sabe em que mês a parcela vai pesar.
+                </p>
+
+                <Field
+                  label="Fatura em aberto hoje"
+                  name="opening"
+                  error={fieldError(state, "opening")}
+                  hint="Quanto já está lançado e ainda não foi pago. Use - na frente."
+                >
+                  <Input
+                    id="card-opening"
+                    name="opening"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    defaultValue={
+                      editando
+                        ? (editando.openingCents / 100).toFixed(2).replace(".", ",")
+                        : ""
+                    }
+                    className="font-mono"
+                  />
+                </Field>
+
+                <Field label="Cor" name="color" error={fieldError(state, "color")}>
+                  <ColorPicker
+                    name="color"
+                    value={color}
+                    onChange={setColor}
+                    palette={VIZ_PALETTE}
+                  />
+                </Field>
+              </>
+            )}
+          </ActionForm>
+      )}
+    </AddDialog>
+  );
+
   return (
-    <div className="grid gap-xl lg:grid-cols-[1.4fr_1fr]">
+    <div className="flex flex-col gap-xl">
+      <div className="flex justify-end">{formularioCartao}</div>
+
       <Card>
         <CardTitle hint={`${cartoes.length} cadastrados`}>
           Cartões de crédito — o que você já deve
@@ -489,7 +678,7 @@ function SecaoCartoes({
 
         {cartoes.length === 0 ? (
           <EmptyState title="Nenhum cartão cadastrado">
-            Cadastre ao lado. Com o fechamento e o vencimento da fatura, o app
+            Cadastre no botão acima. Com o fechamento e o vencimento da fatura, o app
             joga cada parcela no mês em que ela realmente vai ser cobrada.
           </EmptyState>
         ) : (
@@ -608,189 +797,72 @@ function SecaoCartoes({
         )}
       </Card>
 
-      <Card>
-        <CardTitle
-          hint={
-            editando ? (
-              <button
-                type="button"
-                onClick={cancelarEdicao}
-                className="cursor-pointer underline underline-offset-4 hover:text-foreground"
-              >
-                cancelar edição
-              </button>
-            ) : null
-          }
-        >
-          {editando ? `Editando ${editando.name}` : "Novo cartão"}
-        </CardTitle>
-
-        <ActionForm
-          key={editando?.id ?? "novo"}
-          action={editando ? updateAccountForm : createAccountForm}
-          submitLabel={editando ? "Salvar alterações" : "Cadastrar cartão"}
-        >
-          {(state) => (
-            <>
-              {editando ? (
-                <input type="hidden" name="id" value={editando.id} />
-              ) : null}
-              {/* Tipo fixo: este formulário só cadastra cartão. */}
-              <input type="hidden" name="kind" value="CARTAO" />
-              <input type="hidden" name="bankIspb" value={bank?.ispb ?? ""} />
-              <input type="hidden" name="bankName" value={bank?.fullName ?? ""} />
-              <input type="hidden" name="logoUrl" value={bank?.logoUrl ?? ""} />
-
-              <Field label="Banco emissor" name="bank" hint="Lista oficial do Banco Central.">
-                <BankPicker
-                  banks={banks}
-                  selected={bank}
-                  onSelect={(b) => {
-                    setBank(b);
-                    // Prefixo "Cartao": o apelido e unico, e sem ele o cartao
-                    // colidiria com a conta do mesmo banco.
-                    if (b && !nome.trim()) setNome(shortBankName(b.fullName, "Cartão"));
-                  }}
-                />
-              </Field>
-
-              <Field
-                label="Apelido do cartão"
-                name="name"
-                required
-                error={fieldError(state, "name")}
-                hint="Como você chama no dia a dia."
-              >
-                <Input
-                  id="card-name"
-                  name="name"
-                  required
-                  maxLength={40}
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Nubank roxinho"
-                />
-              </Field>
-
-              <Field
-                label="4 últimos dígitos"
-                name="last4"
-                error={fieldError(state, "last4")}
-                hint="Opcional, para diferenciar dois cartões do mesmo banco. O número completo nunca é pedido."
-              >
-                <Input
-                  id="card-last4"
-                  name="last4"
-                  inputMode="numeric"
-                  maxLength={4}
-                  pattern="\d{4}"
-                  placeholder="1234"
-                  defaultValue={editando?.last4 ?? ""}
-                  className="w-24 font-mono"
-                />
-              </Field>
-
-              <Field
-                label="Limite total"
-                name="creditLimit"
-                error={fieldError(state, "creditLimit")}
-                hint="Opcional. Com ele o app mostra quanto do limite já foi usado."
-              >
-                <Input
-                  id="card-limit"
-                  name="creditLimit"
-                  inputMode="decimal"
-                  placeholder="5.000,00"
-                  defaultValue={
-                    editando?.creditLimitCents
-                      ? (editando.creditLimitCents / 100).toFixed(2).replace(".", ",")
-                      : ""
-                  }
-                  className="font-mono"
-                />
-              </Field>
-
-              <div className="grid grid-cols-2 gap-lg">
-                <Field
-                  label="Fecha dia"
-                  name="closingDay"
-                  required
-                  error={fieldError(state, "closingDay")}
-                >
-                  <Input
-                    id="card-closing"
-                    name="closingDay"
-                    type="number"
-                    min={1}
-                    max={31}
-                    required
-                    defaultValue={editando?.closingDay ?? 25}
-                    className="font-mono"
-                  />
-                </Field>
-
-                <Field
-                  label="Vence dia"
-                  name="dueDay"
-                  required
-                  error={fieldError(state, "dueDay")}
-                >
-                  <Input
-                    id="card-due"
-                    name="dueDay"
-                    type="number"
-                    min={1}
-                    max={31}
-                    required
-                    defaultValue={editando?.dueDay ?? 5}
-                    className="font-mono"
-                  />
-                </Field>
-              </div>
-
-              <p className="rounded-control border border-border bg-muted/50 p-lg text-[11px] leading-relaxed text-muted-foreground">
-                Compra feita <strong>até</strong> o dia do fechamento entra na
-                fatura que está fechando. Depois disso, já cai na seguinte — é
-                assim que o app sabe em que mês a parcela vai pesar.
-              </p>
-
-              <Field
-                label="Fatura em aberto hoje"
-                name="opening"
-                error={fieldError(state, "opening")}
-                hint="Quanto já está lançado e ainda não foi pago. Use - na frente."
-              >
-                <Input
-                  id="card-opening"
-                  name="opening"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  defaultValue={
-                    editando
-                      ? (editando.openingCents / 100).toFixed(2).replace(".", ",")
-                      : ""
-                  }
-                  className="font-mono"
-                />
-              </Field>
-
-              <Field label="Cor" name="color" error={fieldError(state, "color")}>
-                <ColorPicker
-                  name="color"
-                  value={color}
-                  onChange={setColor}
-                  palette={VIZ_PALETTE}
-                />
-              </Field>
-            </>
-          )}
-        </ActionForm>
-      </Card>
     </div>
   );
 }
 
 // ---------------------------------------------------------------- empresas
+
+/** Campos da fonte de renda. Os mesmos para cadastrar e editar. */
+function CamposEmpresa({
+  fonte,
+  cor,
+  setCor,
+  state,
+}: {
+  fonte?: IncomeSource;
+  cor: string;
+  setCor: (hex: string) => void;
+  state: Parameters<Parameters<typeof ActionForm>[0]["children"]>[0];
+}) {
+  return (
+    <>
+      {fonte ? <input type="hidden" name="id" value={fonte.id} /> : null}
+
+      <Field label="Nome da empresa" name="name" required error={fieldError(state, "name")}>
+        <Input
+          id="src-name"
+          name="name"
+          required
+          maxLength={40}
+          placeholder="Acme Tecnologia"
+          defaultValue={fonte?.name}
+        />
+      </Field>
+
+      <Field
+        label="Regime"
+        name="kind"
+        required
+        hint="PJ costuma variar mês a mês — é o que o app usa para calcular sua sobra com cautela."
+      >
+        <Select id="src-kind" name="kind" defaultValue={fonte?.kind ?? "PJ"} required>
+          <option value="CLT">CLT</option>
+          <option value="PJ">PJ</option>
+          <option value="OUTRO">Outra (freela, aluguel, dividendos)</option>
+        </Select>
+      </Field>
+
+      <Field label="Cor" name="color" error={fieldError(state, "color")}>
+        <ColorPicker name="color" value={cor} onChange={setCor} palette={VIZ_PALETTE} />
+      </Field>
+    </>
+  );
+}
+
+function EditarEmpresa({ fonte }: { fonte: IncomeSource }) {
+  const [cor, setCor] = useState(fonte.color);
+
+  return (
+    <EditDialog title="Editar fonte de renda" ariaLabel={`Editar ${fonte.name}`}>
+      {(fechar) => (
+        <ActionForm action={updateIncomeSourceForm} submitLabel="Salvar" onSuccess={fechar}>
+          {(state) => <CamposEmpresa fonte={fonte} cor={cor} setCor={setCor} state={state} />}
+        </ActionForm>
+      )}
+    </EditDialog>
+  );
+}
 
 function SecaoEmpresas({
   incomeSources,
@@ -803,8 +875,20 @@ function SecaoEmpresas({
 }) {
   const [cor, setCor] = useState(nextSourceColor);
 
+  const formularioEmpresa = (
+    <AddDialog label="Cadastrar empresa" title="Cadastrar empresa ou fonte de renda">
+      {(fechar) => (
+        <ActionForm action={createIncomeSourceForm} submitLabel="Cadastrar" onSuccess={fechar}>
+          {(state) => <CamposEmpresa cor={cor} setCor={setCor} state={state} />}
+        </ActionForm>
+      )}
+    </AddDialog>
+  );
+
   return (
-    <div className="grid gap-xl lg:grid-cols-[1.4fr_1fr]">
+    <div className="flex flex-col gap-xl">
+      <div className="flex justify-end">{formularioEmpresa}</div>
+
       <Card>
         <CardTitle hint="recebido no mês atual">Empresas e fontes de renda</CardTitle>
 
@@ -844,6 +928,7 @@ function SecaoEmpresas({
                       </span>
                     ) : null}
                   </span>
+                  <EditarEmpresa fonte={s} />
                   <ActionButton
                     action={() => deleteIncomeSourceAction(s.id)}
                     confirm
@@ -860,52 +945,6 @@ function SecaoEmpresas({
         )}
       </Card>
 
-      <Card>
-        <CardTitle>Cadastrar empresa</CardTitle>
-
-        <ActionForm action={createIncomeSourceForm} submitLabel="Cadastrar">
-          {(state) => (
-            <>
-              <Field
-                label="Nome da empresa"
-                name="name"
-                required
-                error={fieldError(state, "name")}
-              >
-                <Input
-                  id="src-name"
-                  name="name"
-                  required
-                  maxLength={40}
-                  placeholder="Acme Tecnologia"
-                />
-              </Field>
-
-              <Field
-                label="Regime"
-                name="kind"
-                required
-                hint="PJ costuma variar mês a mês — é o que o app usa para calcular sua sobra com cautela."
-              >
-                <Select id="src-kind" name="kind" defaultValue="PJ" required>
-                  <option value="CLT">CLT</option>
-                  <option value="PJ">PJ</option>
-                  <option value="OUTRO">Outra (freela, aluguel, dividendos)</option>
-                </Select>
-              </Field>
-
-              <Field label="Cor" name="color" error={fieldError(state, "color")}>
-                <ColorPicker
-                  name="color"
-                  value={cor}
-                  onChange={setCor}
-                  palette={VIZ_PALETTE}
-                />
-              </Field>
-            </>
-          )}
-        </ActionForm>
-      </Card>
     </div>
   );
 }

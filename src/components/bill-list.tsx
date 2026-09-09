@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, Check, Copy, Trash2, Undo2 } from "lucide-react";
 
 import { ActionButton } from "./action-button";
+import { BillEditDialog } from "./bill-form";
 import { Badge, CategoryDot, EmptyState, Money } from "./ui";
 import {
   deleteBillAction,
@@ -14,7 +15,7 @@ import {
 } from "@/lib/actions";
 import { formatDay } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { ACCOUNT_KIND_LABEL, type Account, type BillInMonth, type BillStatus } from "@/lib/types";
+import { ACCOUNT_KIND_LABEL, type Account, type BillInMonth, type BillStatus, type Category } from "@/lib/types";
 
 const STATUS_LABEL: Record<BillStatus, string> = {
   PAID: "paga",
@@ -44,10 +45,12 @@ const STATUS_TONE: Record<BillStatus, "positive" | "warning" | "negative" | "neu
 export function BillList({
   bills,
   accounts,
+  categories,
   today,
 }: {
   bills: BillInMonth[];
   accounts: Account[];
+  categories: Category[];
   today: string;
 }) {
   const [payingId, setPayingId] = useState<string | null>(null);
@@ -63,7 +66,7 @@ export function BillList({
       <section className="glass p-2xl">
         <h2 className="mb-lg text-sm font-semibold tracking-tight">Contas do mês</h2>
         <EmptyState title="Nada a pagar neste mês">
-          Cadastre aluguel, luz, internet e assinaturas ao lado. A fatura dos seus
+          Cadastre aluguel, luz, internet e assinaturas no botão acima. A fatura dos seus
           cartões aparece aqui sozinha, no mês em que vence.
         </EmptyState>
       </section>
@@ -200,6 +203,12 @@ export function BillList({
 
                   {/* Fatura é sintetizada a partir das compras — não existe
                       registro para excluir. */}
+                  {/* Fatura e agendamento não têm registro próprio: não há o
+                      que corrigir nem o que apagar. */}
+                  {ehFatura || ehAgendado ? null : (
+                    <BillEditDialog bill={b.bill} categories={categories} today={today} />
+                  )}
+
                   {ehFatura || ehAgendado ? null : (
                     <ActionButton
                       action={() => deleteBillAction(b.bill.id)}

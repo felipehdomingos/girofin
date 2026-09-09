@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 
-import { getFinanceUserContext } from "./db";
+import { resolveFinanceUserId } from "./finance-user";
 import { paletteColor } from "./palette";
 
 let pool: Pool | null = null;
@@ -136,8 +136,7 @@ async function query<T extends QueryResultRow>(sql: string, values: unknown[] = 
   const translated = translateSql(sql, values);
   if (current) return mapResult(await current.query<T>(translated.sql, translated.values));
 
-  const userId = getFinanceUserContext();
-  if (!userId) throw new Error("Sessão sem usuário para acesso financeiro.");
+  const userId = await resolveFinanceUserId();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
@@ -173,7 +172,6 @@ export class FinancePgDatabase {
 }
 
 export function getFinancePgDb(): FinancePgDatabase {
-  if (!getFinanceUserContext()) throw new Error("Sessão sem usuário para acesso financeiro.");
   return new FinancePgDatabase();
 }
 
@@ -225,18 +223,15 @@ export async function ensureFinanceSeedData(): Promise<void> {
         for (const keyword of keywords) await ruleInsert.run(keyword, categoryId);
       }
     }
-    const income = await db.prepare("SELECT COUNT(*) AS n FROM income_sources").get<{ n: number }>();
-    if (Number(income?.n ?? 0) === 0) {
-      const insert = db.prepare("INSERT INTO income_sources (id, name, kind, color) VALUES (?, ?, ?, ?)");
-      await insert.run(randomUUID(), "Salário CLT", "CLT", "#3987e5");
-      await insert.run(randomUUID(), "Salário PJ", "PJ", "#199e70");
-    }
+    // Fonte de renda NÃO se semeia. "Salário CLT" e "Salário PJ" apareciam
+    // prontos para todo mundo, com R$ 0,00 e sem relação com a vida de
+    // ninguém — quem cadastra é quem sabe onde trabalha. A tela já tem um
+    // estado vazio que ensina o primeiro cadastro.
   });
 }
 
 export async function withFinanceTransaction<T>(fn: (db: FinancePgDatabase) => Promise<T>): Promise<T> {
-  const userId = getFinanceUserContext();
-  if (!userId) throw new Error("Sessão sem usuário para acesso financeiro.");
+  const userId = await resolveFinanceUserId();
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");

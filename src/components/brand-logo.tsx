@@ -21,7 +21,7 @@ export function BrandLogo({ withSlogan = false }: { withSlogan?: boolean }) {
           priority
         />
       </span>
-      {withSlogan ? <p className="brand-slogan">Organize hoje. Viva melhor.</p> : null}
+      {withSlogan ? <p className="brand-slogan">Organize hoje. Viva um futuro melhor.</p> : null}
     </div>
   );
 }
