@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Landmark, Search, X } from "lucide-react";
+import { Landmark, Search, X } from "lucide-react";
 
 import type { Bank } from "@/lib/banks";
 
@@ -198,62 +198,5 @@ export function BankLogo({
       className="shrink-0 rounded-control bg-white object-contain p-xs"
       style={{ width: size, height: size }}
     />
-  );
-}
-
-/**
- * Cores como AMOSTRAS VISÍVEIS, não como código hexadecimal num select.
- *
- * O select anterior mostrava "Cor 1 (#3987e5)" — ninguém sabe que cor é essa
- * sem colar num conversor. Cor se escolhe vendo a cor.
- */
-export function ColorPicker({
-  name,
-  value,
-  onChange,
-  palette,
-  "aria-describedby": ariaDescribedBy,
-  "aria-invalid": ariaInvalid,
-}: {
-  name: string;
-  value: string;
-  onChange: (hex: string) => void;
-  palette: readonly string[];
-  "aria-describedby"?: string;
-  "aria-invalid"?: boolean;
-}) {
-  return (
-    <>
-      <input type="hidden" name={name} value={value} />
-      <div
-        role="radiogroup"
-        aria-label="Cor"
-        aria-describedby={ariaDescribedBy}
-        aria-invalid={ariaInvalid || undefined}
-        className="flex flex-wrap gap-md"
-      >
-        {palette.map((hex, i) => {
-          const ativa = hex.toLowerCase() === value.toLowerCase();
-          return (
-            <button
-              key={hex}
-              type="button"
-              role="radio"
-              aria-checked={ativa}
-              aria-label={`Cor ${i + 1}`}
-              onClick={() => onChange(hex)}
-              className={`flex size-11 cursor-pointer items-center justify-center rounded-full transition-transform duration-200 ${
-                ativa ? "ring-2 ring-ring ring-offset-2 ring-offset-card" : ""
-              }`}
-              style={{ backgroundColor: hex }}
-            >
-              {ativa ? (
-                <Check className="size-4 text-black" aria-hidden="true" />
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
-    </>
   );
 }

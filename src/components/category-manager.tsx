@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ActionButton } from "./action-button";
 import { AddDialog, EditDialog } from "./add-dialog";
-import { ColorPicker } from "./bank-picker";
+import { ColorPicker } from "./color-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
 import { Badge, Card, CardTitle, CategoryDot, Money, ProgressBar } from "./ui";
 import { createCategoryForm, deleteCategoryAction, updateCategoryForm } from "@/lib/actions";

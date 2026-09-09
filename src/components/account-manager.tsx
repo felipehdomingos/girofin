@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 
 import { ActionButton } from "./action-button";
-import { BankLogo, BankPicker, ColorPicker, shortBankName } from "./bank-picker";
+import { BankLogo, BankPicker, shortBankName } from "./bank-picker";
+import { ColorPicker } from "./color-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
 import { AddDialog, EditDialog } from "./add-dialog";
 import { Badge, Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
