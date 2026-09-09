@@ -476,6 +476,57 @@ export async function createCategoryAction(formData: FormData): Promise<ActionRe
   }
 }
 
+export async function updateCategoryAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Categoria nao informada." };
+
+  const parsed = categorySchema.safeParse({
+    name: formData.get("name"),
+    kind: formData.get("kind"),
+    color: formData.get("color"),
+    icon: formData.get("icon") || "circle",
+    budget: formData.get("budget") || undefined,
+  });
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    await repo.updateCategory(id, {
+      name: parsed.data.name,
+      kind: parsed.data.kind,
+      color: parsed.data.color,
+      budgetCents: parsed.data.budget,
+    });
+    revalidateFinance();
+    revalidatePath("/categorias");
+    return { ok: true, message: "Categoria atualizada." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
+export async function deleteCategoryAction(id: string): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  try {
+    const resultado = await repo.deleteCategory(id);
+    revalidateFinance();
+    revalidatePath("/categorias");
+    return {
+      ok: true,
+      message:
+        resultado === "archived"
+          ? "Categoria arquivada. Ela tinha lancamentos, entao saiu das listas mas o historico foi preservado."
+          : "Categoria excluida.",
+    };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 export async function updateBudgetAction(
   id: string,
   budget: string,
@@ -1159,6 +1210,9 @@ export const createTransactionForm: FormAction = async (_prev, formData) =>
 
 export const createCategoryForm: FormAction = async (_prev, formData) =>
   createCategoryAction(formData);
+
+export const updateCategoryForm: FormAction = async (_prev, formData) =>
+  updateCategoryAction(formData);
 
 export const createBillForm: FormAction = async (_prev, formData) =>
   createBillAction(formData);

@@ -22,6 +22,9 @@ export function AddDialog({
   description,
   children,
   className = "",
+  open: openProp,
+  onOpenChange,
+  hideTrigger = false,
 }: {
   /** Texto do botão. Também nomeia o popup para leitor de tela. */
   label: string;
@@ -31,23 +34,47 @@ export function AddDialog({
   /** Recebe a função que fecha o popup — passe para o `onSuccess` do form. */
   children: (close: () => void) => ReactNode;
   className?: string;
+  /**
+   * Modo controlado. Existe para as telas onde o MESMO formulário serve para
+   * cadastrar e editar: o "Editar" de uma linha da lista precisa abrir este
+   * popup, e ele não tem como chamar o botão daqui de dentro.
+   */
+  open?: boolean;
+  onOpenChange?: (aberto: boolean) => void;
+  /**
+   * Esconde o botão próprio, para quando outro controle já abre este popup.
+   * Não dá para embrulhar o componente num `display:none`: o <dialog> vem
+   * junto, e modal dentro de ancestral escondido não aparece.
+   */
+  hideTrigger?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [openInterno, setOpenInterno] = useState(false);
+  const controlado = openProp !== undefined;
+  const open = controlado ? openProp : openInterno;
+
+  const definirOpen = useCallback(
+    (aberto: boolean) => {
+      if (!controlado) setOpenInterno(aberto);
+      onOpenChange?.(aberto);
+    },
+    [controlado, onOpenChange],
+  );
+
   const tituloId = `add-dialog-${label.replace(/\W+/g, "-").toLowerCase()}`;
 
   // Abrir e fechar passam pelo estado, nunca pela ref direto. O `close` desce
   // como render prop e vai parar dentro de um efeito lá embaixo; se ele lesse
   // `dialogRef.current`, seria acesso a ref durante a renderização.
-  const fechar = useCallback(() => setOpen(false), []);
+  const fechar = useCallback(() => definirOpen(false), [definirOpen]);
 
   // Fecha e recarrega os dados do servidor: a lista precisa mostrar o que
   // acabou de ser cadastrado.
   const aoSalvar = useCallback(() => {
-    setOpen(false);
+    definirOpen(false);
     router.refresh();
-  }, [router]);
+  }, [definirOpen, router]);
 
   // O estado manda no DOM: <dialog> não abre por atributo, só por showModal().
   useEffect(() => {
@@ -62,21 +89,23 @@ export function AddDialog({
   useEffect(() => {
     const el = dialogRef.current;
     if (!el) return;
-    const onClose = () => setOpen(false);
+    const onClose = () => definirOpen(false);
     el.addEventListener("close", onClose);
     return () => el.removeEventListener("close", onClose);
-  }, []);
+  }, [definirOpen]);
 
   return (
     <>
+      {hideTrigger ? null : (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => definirOpen(true)}
         className={`inline-flex cursor-pointer items-center gap-md rounded-control bg-accent px-xl py-md text-sm font-semibold text-on-accent transition-colors duration-200 hover:bg-accent/90 ${className}`}
       >
         <Plus className="size-4" aria-hidden="true" />
         {label}
       </button>
+      )}
 
       <dialog
         ref={dialogRef}

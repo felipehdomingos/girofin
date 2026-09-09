@@ -150,7 +150,9 @@ export async function createCategory(input: {
 }): Promise<string> {
   const db = getFinancePgDb();
   const id = newId();
-  db.prepare(
+  // `run` é assíncrono: sem o await, a função voltava antes da linha existir e
+  // um erro do banco virava rejeição sem dono.
+  await db.prepare(
     `INSERT INTO categories (id, name, kind, color, icon, budgetCents)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, input.name, input.kind, input.color, input.icon, input.budgetCents);
@@ -161,6 +163,48 @@ export async function updateCategoryBudget(id: string, budgetCents: number | nul
   await getFinancePgDb()
     .prepare(`UPDATE categories SET budgetCents = ? WHERE id = ?`)
     .run(budgetCents, id);
+}
+
+export async function updateCategory(
+  id: string,
+  input: { name: string; kind: CategoryKind; color: string; budgetCents: number | null },
+): Promise<void> {
+  await getFinancePgDb()
+    .prepare(
+      `UPDATE categories SET name = ?, kind = ?, color = ?, budgetCents = ? WHERE id = ?`,
+    )
+    .run(input.name, input.kind, input.color, input.budgetCents, id);
+}
+
+/**
+ * Tira a categoria do caminho, sem nunca perder histórico.
+ *
+ * Categoria com lançamento não pode ser apagada de verdade: `transactions` e
+ * `fixed_bills` têm chave estrangeira para cá, e mesmo que não tivessem, apagar
+ * levaria junto a resposta para "quanto gastei com mercado no ano passado".
+ * Nesse caso ela é ARQUIVADA — some das listas e do seletor, o histórico fica
+ * inteiro. Sem nenhum lançamento, não há o que preservar e a linha vai embora.
+ *
+ * As regras de palavra-chave são da categoria e vão junto nos dois casos: sem
+ * isso, a categoria apagada continuaria sendo sugerida na hora de lançar.
+ */
+export async function deleteCategory(id: string): Promise<"deleted" | "archived"> {
+  const db = getFinancePgDb();
+  const usos = await db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM transactions WHERE categoryId = ?)
+            + (SELECT COUNT(*) FROM fixed_bills WHERE categoryId = ?) AS n`,
+    )
+    .get<{ n: number }>(id, id);
+
+  await db.prepare(`DELETE FROM category_rules WHERE categoryId = ?`).run(id);
+
+  if (Number(usos?.n ?? 0) > 0) {
+    await db.prepare(`UPDATE categories SET archived = 1 WHERE id = ?`).run(id);
+    return "archived";
+  }
+  await db.prepare(`DELETE FROM categories WHERE id = ?`).run(id);
+  return "deleted";
 }
 
 // --------------------------------------------------------------- lanÃ§amentos
