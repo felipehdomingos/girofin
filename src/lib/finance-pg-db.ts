@@ -223,12 +223,10 @@ export async function ensureFinanceSeedData(): Promise<void> {
         for (const keyword of keywords) await ruleInsert.run(keyword, categoryId);
       }
     }
-    const income = await db.prepare("SELECT COUNT(*) AS n FROM income_sources").get<{ n: number }>();
-    if (Number(income?.n ?? 0) === 0) {
-      const insert = db.prepare("INSERT INTO income_sources (id, name, kind, color) VALUES (?, ?, ?, ?)");
-      await insert.run(randomUUID(), "Salário CLT", "CLT", "#3987e5");
-      await insert.run(randomUUID(), "Salário PJ", "PJ", "#199e70");
-    }
+    // Fonte de renda NÃO se semeia. "Salário CLT" e "Salário PJ" apareciam
+    // prontos para todo mundo, com R$ 0,00 e sem relação com a vida de
+    // ninguém — quem cadastra é quem sabe onde trabalha. A tela já tem um
+    // estado vazio que ensina o primeiro cadastro.
   });
 }
 

@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   ChartColumn,
   CalendarClock,
-  TrendingUp,
   PiggyBank,
   CreditCard,
   Settings,
@@ -21,8 +20,8 @@ type NavUser = { name: string; email: string; hasAvatar?: boolean };
  * Navegação principal: sidebar no desktop, barra inferior no mobile (a área que
  * o polegar alcança sem reposicionar a mão).
  *
- * São 6 itens, um a mais que o teto de 5 da guideline de Navigation Patterns.
- * A alternativa era deixar Configurações só no rodapé da sidebar — que é o que
+ * São 5 itens (6 quando existe cartão), no teto da guideline de Navigation
+ * Patterns. A alternativa era deixar Configurações só no rodapé da sidebar — que é o que
  * havia antes e simplesmente NÃO EXISTE no celular: não havia como cadastrar um
  * banco pelo telefone. Item extra com ícone e rótulo custa menos que uma tela
  * inalcançável. A 375px cada item ainda fica com ~62px de largura, acima do
@@ -31,9 +30,11 @@ type NavUser = { name: string; email: string; hasAvatar?: boolean };
 
 const BASE = [
   { href: "/", label: "Resumo", icon: LayoutDashboard },
-  { href: "/relatorios", label: "Relatórios", icon: ChartColumn },
   { href: "/contas", label: "A pagar", icon: CalendarClock },
-  { href: "/investimentos", label: "Investir", icon: TrendingUp },
+  { href: "/relatorios", label: "Relatórios", icon: ChartColumn },
+  // Investir está oculto por ora. A rota /investimentos continua de pé e
+  // acessível por URL; só saiu do menu. Para trazer de volta, basta
+  // reinserir a linha e o import de TrendingUp.
   { href: "/economia", label: "Economia", icon: PiggyBank },
   { href: "/configuracoes", label: "Config", icon: Settings },
 ] as const;
@@ -51,9 +52,10 @@ export function Nav({ hasCards = false, user }: { hasCards?: boolean; user?: Nav
     .map((part) => part[0]?.toUpperCase())
     .join("") || "GF";
 
-  // Cartões entra logo depois de "A pagar", perto do assunto vizinho.
+  // Cartões entra logo depois de "A pagar", perto do assunto vizinho — que
+  // agora é o índice 1, não o 2.
   const ITEMS = hasCards
-    ? [...BASE.slice(0, 3), CARTOES, ...BASE.slice(3)]
+    ? [...BASE.slice(0, 2), CARTOES, ...BASE.slice(2)]
     : [...BASE];
 
   // "/" só casa exato; as outras casam com as subrotas.
@@ -73,7 +75,7 @@ export function Nav({ hasCards = false, user }: { hasCards?: boolean; user?: Nav
             <div>
               <p className="text-sm font-semibold tracking-tight">Controle Financeiro</p>
               <p className="mt-xs text-xs text-muted-foreground">
-                Organize hoje. Viva melhor.
+                Organize hoje. Viva um futuro melhor.
               </p>
             </div>
             <ThemeToggle />
@@ -118,7 +120,10 @@ export function Nav({ hasCards = false, user }: { hasCards?: boolean; user?: Nav
             <span className="block truncate text-[11px] text-muted-foreground">{user?.email || "Conta pessoal"}</span>
           </span>
         </div>
-        <div className="mt-auto border-t border-border pt-lg">
+        {/* Sem `mt-auto` aqui: o card do usuário acima já empurra os dois para
+            o rodapé. Com `mt-auto` nos dois, a sobra vertical era dividida
+            entre eles e abria um vão no meio. */}
+        <div className="mt-md border-t border-border pt-md">
           <LogoutButton />
         </div>
       </nav>
