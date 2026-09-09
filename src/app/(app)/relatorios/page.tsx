@@ -380,7 +380,7 @@ export default async function RelatoriosPage({
         }
       />
 
-      <PeriodPicker periodo={periodo} de={start} ate={end} />
+      <PeriodPicker de={start} ate={end} />
 
       <ReportFilters
         key={`${tipo}|${params.categoria ?? ""}|${params.conta ?? ""}|${metodo}|${natureza}|${params.fonte ?? ""}|${params.busca ?? ""}`}

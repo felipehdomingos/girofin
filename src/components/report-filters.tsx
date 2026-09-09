@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
+import { Filter } from "lucide-react";
 
 import {
   ACCOUNT_KIND_LABEL,
@@ -54,6 +55,9 @@ export function ReportFilters({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hasFilters = FILTER_KEYS.some((key) => values[key]);
+  const activeFilterCount = FILTER_KEYS.filter((key) => values[key]).length;
+  const [open, setOpen] = useState(hasFilters);
   const [draft, setDraft] = useState(values);
 
   const navigateWithFilters = (nextValues: ReportFilterValues) => {
@@ -92,10 +96,26 @@ export function ReportFilters({
     navigateWithFilters(cleared);
   };
 
-  const hasFilters = FILTER_KEYS.some((key) => values[key]);
-
   return (
-    <section className="glass mb-2xl p-xl">
+    <div className="mb-2xl">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="report-filters-panel"
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex cursor-pointer items-center gap-md rounded-control border border-border bg-muted px-xl py-md text-sm font-semibold text-foreground transition-colors duration-200 hover:bg-muted/80"
+      >
+        <Filter className="size-4" aria-hidden="true" />
+        <span>{open ? "Ocultar filtros" : "Filtros"}</span>
+        {activeFilterCount > 0 ? (
+          <span className="grid size-5 place-items-center rounded-full bg-accent text-xs text-on-accent">
+            {activeFilterCount}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <section id="report-filters-panel" className="glass mt-lg p-xl">
       <div className="mb-lg flex flex-wrap items-baseline justify-between gap-md">
         <div>
           <h2 className="text-sm font-semibold tracking-tight">Filtros do relatório</h2>
@@ -230,6 +250,8 @@ export function ReportFilters({
           </button>
         </div>
       </form>
-    </section>
+        </section>
+      ) : null}
+    </div>
   );
 }
