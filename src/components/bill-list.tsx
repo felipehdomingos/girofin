@@ -63,7 +63,7 @@ export function BillList({
       <section className="glass p-2xl">
         <h2 className="mb-lg text-sm font-semibold tracking-tight">Contas do mês</h2>
         <EmptyState title="Nada a pagar neste mês">
-          Cadastre aluguel, luz, internet e assinaturas ao lado. A fatura dos seus
+          Cadastre aluguel, luz, internet e assinaturas no botão acima. A fatura dos seus
           cartões aparece aqui sozinha, no mês em que vence.
         </EmptyState>
       </section>

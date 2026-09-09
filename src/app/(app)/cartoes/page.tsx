@@ -1,7 +1,7 @@
 ﻿import Link from "next/link";
 import { CreditCard } from "lucide-react";
 
-import { CardPurchaseForm } from "@/components/card-purchase-form";
+import { CardPurchaseDialog } from "@/components/card-purchase-form";
 import { InvoiceImport } from "@/components/invoice-import";
 import { Badge, Card, CardTitle, EmptyState, Money, PageHeader, ProgressBar } from "@/components/ui";
 import { MonthNav } from "@/components/month-nav";
@@ -191,7 +191,11 @@ export default async function CartoesPage({
         <InvoiceImport card={cartao} categories={categories} periodoPadrao={month} />
       </div>
 
-      <div className="mt-xl grid gap-xl lg:grid-cols-[1.4fr_1fr]">
+      <div className="mt-xl flex justify-end">
+        <CardPurchaseDialog card={cartao} categories={categories} today={today()} />
+      </div>
+
+      <div className="mt-xl">
         <Card>
           <CardTitle hint={`${comprasDoMes.length} no mÃªs`}>
             Compras nesta fatura
@@ -199,7 +203,7 @@ export default async function CartoesPage({
 
           {comprasDoMes.length === 0 ? (
             <EmptyState title="Nenhuma compra nesta fatura">
-              Importe o PDF acima ou lance a compra ao lado.
+              Importe o PDF acima ou lance a compra pelo botão.
             </EmptyState>
           ) : (
             <ul className="flex flex-col">
@@ -230,8 +234,6 @@ export default async function CartoesPage({
             </ul>
           )}
         </Card>
-
-        <CardPurchaseForm card={cartao} categories={categories} today={today()} />
       </div>
     </>
   );
