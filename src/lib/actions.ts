@@ -151,6 +151,12 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
   const city = String(formData.get("city") ?? "").trim();
   const state = String(formData.get("state") ?? "").trim().toUpperCase();
   const avatarDataUrl = String(formData.get("avatarDataUrl") ?? "").trim();
+  // CEP guardado so com digito: mascara e coisa de tela, nao de banco.
+  const cep = String(formData.get("cep") ?? "").replace(/\D/g, "");
+  const street = String(formData.get("street") ?? "").trim();
+  const streetNumber = String(formData.get("streetNumber") ?? "").trim();
+  const complement = String(formData.get("complement") ?? "").trim();
+  const district = String(formData.get("district") ?? "").trim();
 
   if (name.length < 2 || name.length > 80) {
     return { ok: false, error: "Informe um nome entre 2 e 80 caracteres." };
@@ -160,6 +166,12 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
   }
   if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
     return { ok: false, error: "Informe uma data de nascimento vÃ¡lida." };
+  }
+  if (cep && cep.length !== 8) {
+    return { ok: false, error: "O CEP deve ter 8 dÃ­gitos." };
+  }
+  if (street.length > 120 || district.length > 80 || streetNumber.length > 20 || complement.length > 60) {
+    return { ok: false, error: "Confira o endereÃ§o antes de salvar." };
   }
   if (avatarDataUrl && !avatarValido(avatarDataUrl)) {
     return { ok: false, error: "A foto deve ser JPG, PNG ou WebP e ter no mÃ¡ximo 2 MB." };
@@ -171,6 +183,11 @@ export async function updateProfileAction(formData: FormData): Promise<ActionRes
       name,
       phone: phone || null,
       birthDate: birthDate || null,
+      cep: cep || null,
+      street: street || null,
+      streetNumber: streetNumber || null,
+      complement: complement || null,
+      district: district || null,
       city: city || null,
       state: state || null,
       avatarDataUrl: avatarDataUrl || null,
