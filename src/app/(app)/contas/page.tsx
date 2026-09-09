@@ -17,8 +17,8 @@ export default async function ContasPage({
   await requirePageUser();
 
   const params = await searchParams;
-  // O mÃªs vem da URL. Sem isso a tela ficava presa no mÃªs corrente, e uma
-  // fatura que vence no mÃªs seguinte simplesmente nÃ£o existia para o usuÃ¡rio.
+  // O mês vem da URL. Sem isso a tela ficava presa no mês corrente, e uma
+  // fatura que vence no mês seguinte simplesmente não existia para o usuário.
   const month = /^\d{4}-\d{2}$/.test(params.mes ?? "") ? params.mes! : currentMonth();
 
   const bills = await getBillsForMonth(month);
@@ -37,7 +37,7 @@ export default async function ContasPage({
     <>
       <PageHeader
         title="Contas a pagar"
-        subtitle="Contas fixas, boletos e faturas de cartÃ£o. As contas bancÃ¡rias ficam em ConfiguraÃ§Ãµes."
+        subtitle="Contas fixas, boletos e faturas de cartão. As contas bancárias ficam em Configurações."
         actions={
           <div className="flex flex-wrap items-center gap-md">
             <MonthNav month={month} basePath="/contas" />
@@ -60,10 +60,10 @@ export default async function ContasPage({
           hint={
             overdue.length === 0
               ? "Nada atrasado"
-              : `${overdue.length} ${overdue.length === 1 ? "conta" : "contas"} â€” pague hoje`
+              : `${overdue.length} ${overdue.length === 1 ? "conta" : "contas"} — pague hoje`
           }
         />
-        <StatCard label="JÃ¡ pago no mÃªs" cents={paidCents} tone="positive" />
+        <StatCard label="Já pago no mês" cents={paidCents} tone="positive" />
       </div>
 
       <div className="mt-xl">

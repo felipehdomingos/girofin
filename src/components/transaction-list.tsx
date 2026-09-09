@@ -27,12 +27,14 @@ import {
 export function TransactionList({
   transactions,
   month,
+  periodLabel,
   allCategories,
   accounts,
   incomeSources,
 }: {
   transactions: TransactionWithCategory[];
   month: string;
+  periodLabel?: string;
   /** Todas as categorias, não só as que aparecem na lista: a edição precisa
       poder mover o lançamento para uma categoria ainda não usada no mês. */
   allCategories: Category[];
@@ -68,7 +70,7 @@ export function TransactionList({
     <section className="glass p-2xl">
       <div className="mb-xl flex flex-wrap items-center justify-between gap-lg">
         <h2 className="text-sm font-semibold tracking-tight">
-          Lançamentos do mês
+          {periodLabel ? `Lançamentos — ${periodLabel}` : "Lançamentos do mês"}
           <span className="ml-md font-normal text-muted-foreground">
             {filtered.length} de {transactions.length}
           </span>
@@ -120,7 +122,7 @@ export function TransactionList({
       </div>
 
       {transactions.length === 0 ? (
-        <EmptyState title="Nenhum lançamento neste mês">
+        <EmptyState title={periodLabel ? "Nenhum lançamento neste período" : "Nenhum lançamento neste mês"}>
           Use o lançamento rápido acima: escreva “mercado 152,30” e o app faz o resto.
         </EmptyState>
       ) : filtered.length === 0 ? (
@@ -209,7 +211,9 @@ export function TransactionList({
         </ul>
       )}
 
-      <p className="sr-only">Mês exibido: {month}</p>
+      <p className="sr-only">
+        {periodLabel ? `Período exibido: ${periodLabel}` : `Mês exibido: ${month}`}
+      </p>
     </section>
   );
 }

@@ -26,8 +26,8 @@ import { requirePageUser } from "@/lib/auth-http";
 export const dynamic = "force-dynamic";
 
 /**
- * DiagnÃ³stico do mÃªs: o que estÃ¡ fora do lugar, quanto custa, e o que fazer.
- * Cada conselho traz um nÃºmero e um passo â€” sem isso Ã© horÃ³scopo financeiro.
+ * Diagnóstico do mês: o que está fora do lugar, quanto custa, e o que fazer.
+ * Cada conselho traz um número e um passo — sem isso é horóscopo financeiro.
  */
 export default async function EconomiaPage() {
   // Autorizacao por pagina: o layout nao impede o segmento de rodar.
@@ -45,7 +45,7 @@ export default async function EconomiaPage() {
   const rates = await getRates();
   const annualRatePct = rates.cdi.annualPct;
 
-  // ReferÃªncia de 6 meses de custo â€” o padrÃ£o de reserva de emergÃªncia.
+  // Referência de 6 meses de custo — o padrão de reserva de emergência.
   const hasEmergencyFund =
     summary.expenseCents > 0 && emergencyFundCents >= summary.expenseCents * 6;
 
@@ -72,7 +72,7 @@ export default async function EconomiaPage() {
     <>
       <PageHeader
         title="Onde economizar"
-        subtitle={`DiagnÃ³stico de ${formatMonthLong(month)}`}
+        subtitle={`Diagnóstico de ${formatMonthLong(month)}`}
       />
 
       {potentialMonthly > 0 ? (
@@ -84,7 +84,7 @@ export default async function EconomiaPage() {
               </p>
               <p className="mt-md">
                 <Money cents={potentialMonthly} size="xl" tone="positive" />
-                <span className="ml-md text-sm text-muted-foreground">por mÃªs</span>
+                <span className="ml-md text-sm text-muted-foreground">por mês</span>
               </p>
             </div>
             <p className="flex max-w-sm items-start gap-md text-xs leading-relaxed text-muted-foreground">
@@ -109,7 +109,7 @@ export default async function EconomiaPage() {
       <div className="grid gap-xl lg:grid-cols-2">
         <div className="flex flex-col gap-lg">
           <h2 className="text-sm font-semibold tracking-tight">
-            DiagnÃ³stico
+            Diagnóstico
             <span className="ml-md font-normal text-muted-foreground">
               {advice.length} {advice.length === 1 ? "ponto" : "pontos"}
             </span>
@@ -126,7 +126,7 @@ export default async function EconomiaPage() {
           ) : (
             <Card>
               <CardTitle>Gastos por categoria</CardTitle>
-              <EmptyState title="Sem gastos lanÃ§ados neste mÃªs" />
+              <EmptyState title="Sem gastos lançados neste mês" />
             </Card>
           )}
 
@@ -184,7 +184,7 @@ function AdviceCard({
   return (
     <article className={`rounded-card border p-xl ${style.border}`}>
       <div className="flex items-start gap-lg">
-        {/* Ãcone + cor + texto: a severidade nunca depende sÃ³ da cor. */}
+        {/* Ícone + cor + texto: a severidade nunca depende só da cor. */}
         <Icon className={`mt-xs size-5 shrink-0 ${style.iconClass}`} aria-hidden="true" />
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">{title}</h3>
@@ -200,7 +200,7 @@ function AdviceCard({
           {monthlySavingCents && monthlySavingCents > 0 ? (
             <p className="mt-md flex flex-wrap gap-lg text-xs">
               <span className="text-muted-foreground">
-                por mÃªs:{" "}
+                por mês:{" "}
                 <span className="font-mono tabular text-pos">
                   {formatBRL(monthlySavingCents)}
                 </span>

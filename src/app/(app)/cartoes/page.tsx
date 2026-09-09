@@ -19,8 +19,8 @@ import { requirePageUser } from "@/lib/auth-http";
 export const dynamic = "force-dynamic";
 
 /**
- * Tela dos cartÃµes de crÃ©dito: a fatura do mÃªs, as compras dela, e as duas
- * formas de alimentar isso â€” importando o PDF da fatura ou lanÃ§ando Ã  mÃ£o.
+ * Tela dos cartões de crédito: a fatura do mês, as compras dela, e as duas
+ * formas de alimentar isso — importando o PDF da fatura ou lançando à mão.
  */
 export default async function CartoesPage({
   searchParams,
@@ -39,16 +39,16 @@ export default async function CartoesPage({
   if (cartoes.length === 0) {
     return (
       <>
-        <PageHeader title="CartÃµes de crÃ©dito" />
+        <PageHeader title="Cartões de crédito" />
         <Card>
-          <EmptyState title="Nenhum cartÃ£o cadastrado">
-            Cadastre um cartÃ£o em ConfiguraÃ§Ãµes para importar faturas e acompanhar o
+          <EmptyState title="Nenhum cartão cadastrado">
+            Cadastre um cartão em Configurações para importar faturas e acompanhar o
             limite.{" "}
             <Link
               href="/configuracoes"
               className="cursor-pointer underline underline-offset-4"
             >
-              Ir para ConfiguraÃ§Ãµes
+              Ir para Configurações
             </Link>
           </EmptyState>
         </Card>
@@ -56,15 +56,15 @@ export default async function CartoesPage({
     );
   }
 
-  // CartÃ£o selecionado pela URL, com o primeiro como padrÃ£o.
+  // Cartão selecionado pela URL, com o primeiro como padrão.
   const cartao = cartoes.find((c) => c.id === params.cartao) ?? cartoes[0];
   const { start, end } = monthBounds(month);
 
   const faturaCents = await getCardInvoice(cartao.id, month);
   /*
-   * Compras e estornos. O estorno Ã© ENTRADA no cartÃ£o â€” some daqui se filtrar
-   * sÃ³ despesa, e aÃ­ a soma da lista nÃ£o bate com o valor da fatura, que jÃ¡
-   * desconta a devoluÃ§Ã£o.
+   * Compras e estornos. O estorno é ENTRADA no cartão — some daqui se filtrar
+   * só despesa, e aí a soma da lista não bate com o valor da fatura, que já
+   * desconta a devolução.
    */
   const comprasDoMes = (await listTransactionsInRange(start, end)).filter(
     (t) => t.accountId === cartao.id,
@@ -78,14 +78,14 @@ export default async function CartoesPage({
   return (
     <>
       <PageHeader
-        title="CartÃµes de crÃ©dito"
-        subtitle="Fatura do mÃªs, importaÃ§Ã£o do PDF e lanÃ§amento de compras"
+        title="Cartões de crédito"
+        subtitle="Fatura do mês, importação do PDF e lançamento de compras"
         actions={<MonthNav month={month} basePath="/cartoes" />}
       />
 
-      {/* Seletor sÃ³ aparece com mais de um cartÃ£o: com um sÃ³, seria ruÃ­do. */}
+      {/* Seletor só aparece com mais de um cartão: com um só, seria ruído. */}
       {cartoes.length > 1 ? (
-        <div role="tablist" aria-label="CartÃµes" className="mb-2xl flex flex-wrap gap-sm">
+        <div role="tablist" aria-label="Cartões" className="mb-2xl flex flex-wrap gap-sm">
           {cartoes.map((c) => {
             const ativo = c.id === cartao.id;
             return (
@@ -103,7 +103,7 @@ export default async function CartoesPage({
                 <CreditCard className="size-4" aria-hidden="true" />
                 {c.name}
                 {c.last4 ? (
-                  <span className="font-mono text-[11px]">â€¢â€¢{c.last4}</span>
+                  <span className="font-mono text-[11px]">••{c.last4}</span>
                 ) : null}
               </Link>
             );
@@ -115,14 +115,14 @@ export default async function CartoesPage({
         <CardTitle
           hint={
             cartao.closingDay && cartao.dueDay
-              ? `fecha dia ${cartao.closingDay} Â· vence dia ${cartao.dueDay}`
+              ? `fecha dia ${cartao.closingDay} · vence dia ${cartao.dueDay}`
               : undefined
           }
         >
           {cartao.name}
           {cartao.last4 ? (
             <span className="ml-md font-mono text-xs text-muted-foreground">
-              â€¢â€¢â€¢â€¢ {cartao.last4}
+              •••• {cartao.last4}
             </span>
           ) : null}
         </CardTitle>
@@ -130,14 +130,14 @@ export default async function CartoesPage({
         <div className="grid gap-lg sm:grid-cols-3">
           <div className="rounded-control border border-border bg-muted/40 p-lg">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Fatura deste mÃªs
+              Fatura deste mês
             </p>
             <p className="mt-sm">
               <Money cents={faturaCents} size="lg" tone="negative" />
             </p>
             <p className="mt-xs text-[11px] text-muted-foreground">
               {comprasDoMes.length}{" "}
-              {comprasDoMes.length === 1 ? "lanÃ§amento" : "lanÃ§amentos"}
+              {comprasDoMes.length === 1 ? "lançamento" : "lançamentos"}
             </p>
           </div>
 
@@ -156,7 +156,7 @@ export default async function CartoesPage({
           {cartao.creditLimitCents ? (
             <div className="rounded-control border border-border bg-muted/40 p-lg">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Limite disponÃ­vel
+                Limite disponível
               </p>
               <p className="mt-sm">
                 <Money
@@ -197,7 +197,7 @@ export default async function CartoesPage({
 
       <div className="mt-xl">
         <Card>
-          <CardTitle hint={`${comprasDoMes.length} no mÃªs`}>
+          <CardTitle hint={`${comprasDoMes.length} no mês`}>
             Compras nesta fatura
           </CardTitle>
 
@@ -219,7 +219,7 @@ export default async function CartoesPage({
                     <span className="block truncate text-sm">{t.description}</span>
                     <span className="text-xs text-muted-foreground">
                       {t.category.name}
-                      {t.purchaseDate ? ` Â· comprado ${formatDay(t.purchaseDate)}` : ""}
+                      {t.purchaseDate ? ` · comprado ${formatDay(t.purchaseDate)}` : ""}
                     </span>
                   </span>
                   {t.type === "INCOME" ? <Badge tone="positive">estorno</Badge> : null}

@@ -14,7 +14,7 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Hub de cadastros: bancos e cartÃµes, empresas, categorias.
+ * Hub de cadastros: bancos e cartões, empresas, categorias.
  * Tudo que se cadastra uma vez e se usa o resto do tempo mora aqui.
  */
 export default async function ConfiguracoesPage() {
@@ -27,11 +27,11 @@ export default async function ConfiguracoesPage() {
   const incomeSources = await listIncomeSources();
   const categories = await listCategories();
   const summary = await getMonthSummary(month);
-  // Lista oficial do Banco Central. Nunca lanÃ§a: cai em cache ou lista mÃ­nima.
+  // Lista oficial do Banco Central. Nunca lança: cai em cache ou lista mínima.
   const { banks } = await getBanks();
 
-  // Gasto do mÃªs por categoria, para definir o orÃ§amento olhando o real
-  // e nÃ£o no escuro.
+  // Gasto do mês por categoria, para definir o orçamento olhando o real
+  // e não no escuro.
   const spentByCategory = Object.fromEntries(
     summary.byCategory.map((c) => [c.category.id, c.totalCents]),
   );
@@ -39,8 +39,8 @@ export default async function ConfiguracoesPage() {
   return (
     <>
       <PageHeader
-        title="ConfiguraÃ§Ãµes"
-        subtitle="Cadastros: contas bancÃ¡rias e cartÃµes, empresas e categorias"
+        title="Configurações"
+        subtitle="Cadastros: contas bancárias e cartões, empresas e categorias"
       />
       <SettingsTabs
         accounts={accounts}

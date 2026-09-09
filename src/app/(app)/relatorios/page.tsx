@@ -1,6 +1,7 @@
 ﻿import { CategoryBarChart, TrendChart } from "@/components/charts";
 import { EntryDialog } from "@/components/entry-dialog";
 import { PeriodPicker } from "@/components/period-picker";
+import { ReportFilters } from "@/components/report-filters";
 import { TransactionList } from "@/components/transaction-list";
 import {
   Badge,
@@ -13,9 +14,13 @@ import {
   StatCard,
 } from "@/components/ui";
 import {
+  addDays,
+  addMonths,
   addMonthsToDate,
   currentMonth,
   daysInRange,
+  formatDayMonth,
+  formatMonth,
   formatRange,
   monthBounds,
   today,
@@ -24,43 +29,253 @@ import {
 } from "@/lib/dates";
 import { formatBRL, safePercent } from "@/lib/money";
 import {
-  getRangeByAccount,
-  getRangeByMethod,
-  getRangeSeries,
-  getRangeSummary,
   listAccounts,
   listCategories,
   listIncomeSources,
   listTransactionsInRange,
 } from "@/lib/repo";
-import { KIND_LABEL, KIND_TARGET, METHOD_LABEL, type CategoryKind } from "@/lib/types";
+import {
+  KIND_LABEL,
+  KIND_TARGET,
+  METHOD_LABEL,
+  NATURE_LABEL,
+  type Account,
+  type Category,
+  type CategoryKind,
+  type IncomeSource,
+  type PaymentMethod,
+  type TransactionWithCategory,
+  type TxNature,
+  type TxType,
+} from "@/lib/types";
 import { requirePageUser } from "@/lib/auth-http";
 
 export const dynamic = "force-dynamic";
 
-/** Amplitude mÃ¡xima do perÃ­odo customizado, em meses (5 anos). */
+/** Amplitude máxima do período customizado, em meses (5 anos). */
 const MAX_RANGE_MONTHS = 60;
 
+type ReportSummary = {
+  incomeCents: number;
+  expenseCents: number;
+  balanceCents: number;
+  byKind: Record<CategoryKind, number>;
+  byCategory: Array<{
+    category: Category;
+    totalCents: number;
+    share: number;
+    budgetCents: number | null;
+    budgetUsedPct: number | null;
+  }>;
+  transactionCount: number;
+  byIncomeSource: Array<{
+    source: IncomeSource;
+    totalCents: number;
+    share: number;
+  }>;
+  installmentCents: number;
+  fixedCents: number;
+};
+
+type ReportSeries = {
+  bucket: "dia" | "mes";
+  pontos: Array<{
+    label: string;
+    incomeCents: number;
+    expenseCents: number;
+    balanceCents: number;
+  }>;
+};
+
+function sumTransactions(transactions: TransactionWithCategory[], type: TxType): number {
+  return transactions.reduce(
+    (total, transaction) =>
+      total + (transaction.type === type ? transaction.amountCents : 0),
+    0,
+  );
+}
+
+function buildReportSummary(
+  transactions: TransactionWithCategory[],
+  incomeSources: IncomeSource[],
+): ReportSummary {
+  const incomeCents = sumTransactions(transactions, "INCOME");
+  const expenseCents = sumTransactions(transactions, "EXPENSE");
+  const byCategoryMap = new Map<string, { category: Category; totalCents: number }>();
+  const bySourceMap = new Map<string, { source: IncomeSource; totalCents: number }>();
+  const byKind: Record<CategoryKind, number> = { NEED: 0, WANT: 0, SAVE: 0 };
+  let installmentCents = 0;
+  let fixedCents = 0;
+
+  for (const transaction of transactions) {
+    if (transaction.type === "EXPENSE") {
+      const current = byCategoryMap.get(transaction.category.id);
+      byCategoryMap.set(transaction.category.id, {
+        category: transaction.category,
+        totalCents: (current?.totalCents ?? 0) + transaction.amountCents,
+      });
+      byKind[transaction.category.kind] += transaction.amountCents;
+      if (transaction.nature === "PARCELADO") installmentCents += transaction.amountCents;
+      if (transaction.nature === "FIXO") fixedCents += transaction.amountCents;
+    }
+
+    if (transaction.type === "INCOME" && transaction.incomeSourceId) {
+      const source = incomeSources.find((item) => item.id === transaction.incomeSourceId);
+      if (source) {
+        const current = bySourceMap.get(source.id);
+        bySourceMap.set(source.id, {
+          source,
+          totalCents: (current?.totalCents ?? 0) + transaction.amountCents,
+        });
+      }
+    }
+  }
+
+  const byCategory = [...byCategoryMap.values()]
+    .sort((a, b) => b.totalCents - a.totalCents)
+    .map(({ category, totalCents }) => ({
+      category,
+      totalCents,
+      share: safePercent(totalCents, expenseCents),
+      budgetCents: category.budgetCents,
+      budgetUsedPct:
+        category.budgetCents && category.budgetCents > 0
+          ? safePercent(totalCents, category.budgetCents)
+          : null,
+    }));
+
+  const byIncomeSource = [...bySourceMap.values()]
+    .sort((a, b) => b.totalCents - a.totalCents)
+    .map(({ source, totalCents }) => ({
+      source,
+      totalCents,
+      share: safePercent(totalCents, incomeCents),
+    }));
+
+  return {
+    incomeCents,
+    expenseCents,
+    balanceCents: incomeCents - expenseCents,
+    byKind,
+    byCategory,
+    transactionCount: transactions.length,
+    byIncomeSource,
+    installmentCents,
+    fixedCents,
+  };
+}
+
+function buildReportSeries(
+  start: string,
+  end: string,
+  transactions: TransactionWithCategory[],
+): ReportSeries {
+  const bucket: "dia" | "mes" = daysInRange(start, end) <= 62 ? "dia" : "mes";
+  const keys: string[] = [];
+
+  if (bucket === "dia") {
+    for (let date = start; date <= end; date = addDays(date, 1)) keys.push(date);
+  } else {
+    for (let month = start.slice(0, 7); month <= end.slice(0, 7); month = addMonths(month, 1)) {
+      keys.push(month);
+    }
+  }
+
+  const totals = new Map<string, number>();
+  for (const transaction of transactions) {
+    const key = bucket === "dia" ? transaction.date : transaction.date.slice(0, 7);
+    const totalKey = `${key}:${transaction.type}`;
+    totals.set(totalKey, (totals.get(totalKey) ?? 0) + transaction.amountCents);
+  }
+
+  return {
+    bucket,
+    pontos: keys.map((key) => {
+      const incomeCents = totals.get(`${key}:INCOME`) ?? 0;
+      const expenseCents = totals.get(`${key}:EXPENSE`) ?? 0;
+      return {
+        label: bucket === "dia" ? formatDayMonth(key) : formatMonth(key),
+        incomeCents,
+        expenseCents,
+        balanceCents: incomeCents - expenseCents,
+      };
+    }),
+  };
+}
+
+function buildMethodTotals(transactions: TransactionWithCategory[]) {
+  const totals = new Map<PaymentMethod | null, number>();
+  for (const transaction of transactions) {
+    if (transaction.type !== "EXPENSE") continue;
+    totals.set(transaction.method, (totals.get(transaction.method) ?? 0) + transaction.amountCents);
+  }
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([method, totalCents]) => ({ method, totalCents }));
+}
+
+function buildAccountTotals(transactions: TransactionWithCategory[], accounts: Account[]) {
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+  const totals = new Map<string, { name: string | null; color: string | null; totalCents: number }>();
+
+  for (const transaction of transactions) {
+    if (transaction.type !== "EXPENSE") continue;
+    const account = transaction.accountId ? accountById.get(transaction.accountId) : undefined;
+    const key = transaction.accountId ?? "sem-conta";
+    const current = totals.get(key);
+    totals.set(key, {
+      name: account?.name ?? transaction.accountName,
+      color: account?.color ?? null,
+      totalCents: (current?.totalCents ?? 0) + transaction.amountCents,
+    });
+  }
+
+  return [...totals.values()].sort((a, b) => b.totalCents - a.totalCents);
+}
+
+function isPaymentMethod(value: string | undefined): value is PaymentMethod {
+  return !!value && value in METHOD_LABEL;
+}
+
+function isTxNature(value: string | undefined): value is TxNature {
+  return !!value && value in NATURE_LABEL;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("pt-BR");
+}
+
 /**
- * RelatÃ³rios por perÃ­odo: semana, mÃªs, ano ou intervalo customizado.
+ * Relatórios por período: semana, mês, ano ou intervalo customizado.
  *
- * Substituiu a antiga tela "LanÃ§ar", que virou sÃ³ uma lista depois que o
- * lanÃ§amento passou a ser um popup acessÃ­vel de qualquer tela. O extrato
- * continua aqui embaixo â€” mas agora dentro do perÃ­odo que vocÃª escolher, e
- * nÃ£o sempre no mÃªs corrente.
+ * Substituiu a antiga tela "Lançar", que virou só uma lista depois que o
+ * lançamento passou a ser um popup acessível de qualquer tela. O extrato
+ * continua aqui embaixo — mas agora dentro do período que você escolher, e
+ * não sempre no mês corrente.
  */
 export default async function RelatoriosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; de?: string; ate?: string }>;
+  searchParams: Promise<{
+    periodo?: string;
+    de?: string;
+    ate?: string;
+    tipo?: string;
+    categoria?: string;
+    conta?: string;
+    metodo?: string;
+    natureza?: string;
+    fonte?: string;
+    busca?: string;
+  }>;
 }) {
-  // Autorizacao por pagina: o layout nao impede o segmento de rodar.
+  // Autorização por página: o layout não impede o segmento de rodar.
   await requirePageUser();
 
   const params = await searchParams;
   const hoje = today();
 
-  // O perÃ­odo vem da URL: dÃ¡ para voltar pelo navegador e compartilhar o recorte.
+  // O período vem da URL: dá para voltar pelo navegador e compartilhar o recorte.
   const periodo = params.periodo ?? "mes";
   const dataValida = (d?: string) => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
@@ -74,14 +289,14 @@ export default async function RelatoriosPage({
   } else if (periodo === "custom" && dataValida(params.de) && dataValida(params.ate)) {
     start = params.de!;
     end = params.ate!;
-    // Intervalo invertido viraria consulta vazia sem explicaÃ§Ã£o: corrige na entrada.
+    // Intervalo invertido viraria consulta vazia sem explicação: corrige na entrada.
     if (start > end) [start, end] = [end, start];
     /*
-     * Teto de amplitude. SÃ³ o FORMATO da data era validado, entÃ£o "0001-01-01"
-     * a "9999-12-31" passava â€” e `getRangeSeries` monta uma chave por mÃªs do
-     * intervalo, com trabalho proporcional Ã  distÃ¢ncia entre as duas datas. Uma
-     * URL montada Ã  mÃ£o travava a renderizaÃ§Ã£o da pÃ¡gina. Cinco anos cobre
-     * qualquer recorte que um app de finanÃ§as pessoais precise mostrar.
+     * Teto de amplitude. Só o FORMATO da data era validado, então "0001-01-01"
+     * a "9999-12-31" passava — e `getRangeSeries` monta uma chave por mês do
+     * intervalo, com trabalho proporcional à distância entre as duas datas. Uma
+     * URL montada à mão travava a renderização da página. Cinco anos cobre
+     * qualquer recorte que um app de finanças pessoais precise mostrar.
      */
     const limite = addMonthsToDate(start, MAX_RANGE_MONTHS);
     if (end > limite) end = limite;
@@ -89,11 +304,50 @@ export default async function RelatoriosPage({
     ({ start, end } = monthBounds(currentMonth()));
   }
 
-  const resumo = await getRangeSummary(start, end);
-  const serie = await getRangeSeries(start, end);
-  const porMetodo = await getRangeByMethod(start, end);
-  const porConta = await getRangeByAccount(start, end);
-  const lancamentos = await listTransactionsInRange(start, end);
+  const [todasCategorias, todasContas, todasFontes, todosLancamentos] = await Promise.all([
+    listCategories(true),
+    listAccounts(true),
+    listIncomeSources(true),
+    listTransactionsInRange(start, end),
+  ]);
+  const categorias = todasCategorias.filter((category) => !category.archived);
+  const contas = todasContas.filter((account) => !account.archived);
+  const fontes = todasFontes.filter((source) => !source.archived);
+
+  const tipo: TxType | "" = params.tipo === "INCOME" || params.tipo === "EXPENSE" ? params.tipo : "";
+  const metodo: PaymentMethod | "" = isPaymentMethod(params.metodo) ? params.metodo : "";
+  const natureza: TxNature | "" = isTxNature(params.natureza) ? params.natureza : "";
+  const busca = normalizeSearchText(params.busca?.trim() ?? "");
+
+  const lancamentos = todosLancamentos.filter((transaction) => {
+    // Transferências próprias mudam o dinheiro de lugar, mas não representam
+    // entrada ou saída no relatório e já ficam fora dos indicadores.
+    if (transaction.transferToAccountId) return false;
+    if (tipo && transaction.type !== tipo) return false;
+    if (params.categoria && transaction.categoryId !== params.categoria) return false;
+    if (params.conta && transaction.accountId !== params.conta) return false;
+    if (metodo && transaction.method !== metodo) return false;
+    if (natureza && transaction.nature !== natureza) return false;
+    if (params.fonte && transaction.incomeSourceId !== params.fonte) return false;
+    if (busca) {
+      const texto = normalizeSearchText([
+        transaction.description,
+        transaction.notes,
+        transaction.category.name,
+        transaction.accountName,
+        transaction.incomeSourceName,
+      ]
+        .filter(Boolean)
+        .join(" "));
+      if (!texto.includes(busca)) return false;
+    }
+    return true;
+  });
+
+  const resumo = buildReportSummary(lancamentos, todasFontes);
+  const serie = buildReportSeries(start, end, lancamentos);
+  const porMetodo = buildMethodTotals(lancamentos);
+  const porConta = buildAccountTotals(lancamentos, contas);
   const dias = daysInRange(start, end);
 
   const categoryData = resumo.byCategory.map((c) => ({
@@ -103,20 +357,24 @@ export default async function RelatoriosPage({
     share: c.share,
   }));
 
-  // MÃ©dia diÃ¡ria: Ã© o nÃºmero que dÃ¡ para projetar o resto do perÃ­odo e
+  // Média diária: é o número que dá para projetar o resto do período e
   // comparar recortes de tamanhos diferentes (uma semana com um ano).
-  const mediaDiaria = dias > 0 ? Math.round(resumo.expenseCents / dias) : 0;
+  const mediaBase = tipo === "INCOME" ? resumo.incomeCents : resumo.expenseCents;
+  const mediaDiaria = dias > 0 ? Math.round(mediaBase / dias) : 0;
+  const mediaLabel = tipo === "INCOME" ? "Média de entradas por dia" : "Média por dia";
+  const mediaHint =
+    tipo === "INCOME" ? "Entrada média diária no período" : "Gasto médio diário no período";
 
   return (
     <>
       <PageHeader
-        title="RelatÃ³rios"
-        subtitle={`${formatRange(start, end)} Â· ${dias} ${dias === 1 ? "dia" : "dias"}`}
+        title="Relatórios"
+        subtitle={`${formatRange(start, end)} · ${dias} ${dias === 1 ? "dia" : "dias"}`}
         actions={
           <EntryDialog
-            categories={await listCategories()}
-            accounts={await listAccounts()}
-            incomeSources={await listIncomeSources()}
+            categories={categorias}
+            accounts={contas}
+            incomeSources={fontes}
             today={hoje}
           />
         }
@@ -124,29 +382,45 @@ export default async function RelatoriosPage({
 
       <PeriodPicker periodo={periodo} de={start} ate={end} />
 
+      <ReportFilters
+        key={`${tipo}|${params.categoria ?? ""}|${params.conta ?? ""}|${metodo}|${natureza}|${params.fonte ?? ""}|${params.busca ?? ""}`}
+        categories={todasCategorias}
+        accounts={todasContas}
+        incomeSources={todasFontes}
+        values={{
+          tipo,
+          categoria: params.categoria ?? "",
+          conta: params.conta ?? "",
+          metodo,
+          natureza,
+          fonte: params.fonte ?? "",
+          busca: params.busca ?? "",
+        }}
+      />
+
       <div className="grid gap-xl sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Entradas" cents={resumo.incomeCents} tone="positive" direction="in" />
-        <StatCard label="SaÃ­das" cents={resumo.expenseCents} tone="negative" direction="out" />
+        <StatCard label="Saídas" cents={resumo.expenseCents} tone="negative" direction="out" />
         <StatCard
-          label="Saldo do perÃ­odo"
+          label="Saldo do período"
           cents={resumo.balanceCents}
           tone="auto"
-          hint={`${resumo.transactionCount} ${resumo.transactionCount === 1 ? "lanÃ§amento" : "lanÃ§amentos"}`}
+          hint={`${resumo.transactionCount} ${resumo.transactionCount === 1 ? "lançamento" : "lançamentos"}`}
         />
         <StatCard
-          label="MÃ©dia por dia"
+          label={mediaLabel}
           cents={mediaDiaria}
-          tone="negative"
-          hint="Gasto mÃ©dio diÃ¡rio no perÃ­odo"
+          tone={tipo === "INCOME" ? "positive" : "negative"}
+          hint={mediaHint}
         />
       </div>
 
       {resumo.transactionCount === 0 ? (
         <div className="mt-xl">
           <Card>
-            <EmptyState title="Nenhum lanÃ§amento neste perÃ­odo">
-              Escolha outro perÃ­odo acima ou registre um lanÃ§amento para comeÃ§ar a ver
-              os nÃºmeros aqui.
+            <EmptyState title="Nenhum lançamento neste período">
+              Escolha outro período acima ou registre um lançamento para começar a ver
+              os números aqui.
             </EmptyState>
           </Card>
         </div>
@@ -158,16 +432,16 @@ export default async function RelatoriosPage({
             ) : (
               <Card>
                 <CardTitle>Gastos por categoria</CardTitle>
-                <EmptyState title="Sem saÃ­das no perÃ­odo" />
+                <EmptyState title="Sem saídas no período" />
               </Card>
             )}
 
             <TrendChart
-              titulo={serie.bucket === "dia" ? "Dia a dia" : "MÃªs a mÃªs"}
+              titulo={serie.bucket === "dia" ? "Dia a dia" : "Mês a mês"}
               dica={
                 serie.bucket === "dia"
-                  ? "Entradas e saÃ­das por dia"
-                  : "Entradas e saÃ­das por mÃªs"
+                  ? "Entradas e saídas por dia"
+                  : "Entradas e saídas por mês"
               }
               data={serie.pontos}
             />
@@ -175,7 +449,7 @@ export default async function RelatoriosPage({
 
           <div className="mt-xl grid gap-xl lg:grid-cols-3">
             <Card>
-              <CardTitle hint="regra 50/30/20">DivisÃ£o dos gastos</CardTitle>
+              <CardTitle hint="regra 50/30/20">Divisão dos gastos</CardTitle>
               <ul className="flex flex-col gap-xl">
                 {(["NEED", "WANT", "SAVE"] as CategoryKind[]).map((kind) => {
                   const cents = resumo.byKind[kind];
@@ -217,21 +491,21 @@ export default async function RelatoriosPage({
             <Card>
               <CardTitle>Por forma de pagamento</CardTitle>
               {porMetodo.length === 0 ? (
-                <EmptyState title="Sem saÃ­das no perÃ­odo" />
+                <EmptyState title="Sem saídas no período" />
               ) : (
                 <ul className="flex flex-col gap-lg">
                   {porMetodo.map((m) => (
                     <li key={m.method ?? "sem"}>
                       <div className="mb-sm flex items-baseline justify-between gap-md">
                         <span className="text-sm">
-                          {m.method ? METHOD_LABEL[m.method] : "NÃ£o informado"}
+                          {m.method ? METHOD_LABEL[m.method] : "Não informado"}
                         </span>
                         <Money cents={m.totalCents} size="sm" />
                       </div>
                       <ProgressBar
                         value={m.totalCents}
                         max={resumo.expenseCents || 1}
-                        label={`${m.method ? METHOD_LABEL[m.method] : "NÃ£o informado"}: ${formatBRL(m.totalCents)}`}
+                        label={`${m.method ? METHOD_LABEL[m.method] : "Não informado"}: ${formatBRL(m.totalCents)}`}
                         tone="neutral"
                       />
                     </li>
@@ -241,9 +515,9 @@ export default async function RelatoriosPage({
             </Card>
 
             <Card>
-              <CardTitle>Por conta e cartÃ£o</CardTitle>
+              <CardTitle>Por conta e cartão</CardTitle>
               {porConta.length === 0 ? (
-                <EmptyState title="Sem saÃ­das no perÃ­odo" />
+                <EmptyState title="Sem saídas no período" />
               ) : (
                 <ul className="flex flex-col gap-lg">
                   {porConta.map((c, i) => (
@@ -314,9 +588,10 @@ export default async function RelatoriosPage({
             <TransactionList
               transactions={lancamentos}
               month={start.slice(0, 7)}
-              allCategories={await listCategories()}
-              accounts={await listAccounts()}
-              incomeSources={await listIncomeSources()}
+              periodLabel={formatRange(start, end)}
+              allCategories={todasCategorias}
+              accounts={todasContas}
+              incomeSources={todasFontes}
             />
           </div>
         </>
