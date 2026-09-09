@@ -311,7 +311,13 @@ export default async function RelatoriosPage({
           ) : null}
 
           <div className="mt-xl">
-            <TransactionList transactions={lancamentos} month={start.slice(0, 7)} />
+            <TransactionList
+              transactions={lancamentos}
+              month={start.slice(0, 7)}
+              allCategories={await listCategories()}
+              accounts={await listAccounts()}
+              incomeSources={await listIncomeSources()}
+            />
           </div>
         </>
       )}

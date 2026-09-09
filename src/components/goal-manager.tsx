@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Target, Trash2 } from "lucide-react";
+import { Target, Trash2 } from "lucide-react";
 
 import { ActionButton } from "./action-button";
 import { ActionForm, Field, Input, fieldError } from "./form-kit";
 import { Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
-import { addToGoalAction, createGoalForm, deleteGoalAction } from "@/lib/actions";
+import { AddDialog, EditDialog } from "./add-dialog";
+import { addToGoalAction, createGoalForm, deleteGoalAction, updateGoalForm } from "@/lib/actions";
 import { monthsToReach } from "@/lib/finance";
 import { formatBRL, safePercent } from "@/lib/money";
 import type { Goal } from "@/lib/types";
@@ -18,6 +19,85 @@ import type { Goal } from "@/lib/types";
  * real do CDI. Uma barra de progresso sozinha diz "você está em 34%"; a
  * pergunta que a pessoa tem é "quando eu chego lá?".
  */
+/** Campos da meta. Os mesmos para criar e editar. */
+function CamposMeta({
+  meta,
+  state,
+}: {
+  meta?: Goal;
+  state: Parameters<Parameters<typeof ActionForm>[0]["children"]>[0];
+}) {
+  return (
+    <>
+      {meta ? <input type="hidden" name="id" value={meta.id} /> : null}
+
+      <Field label="Nome" name="name" required error={fieldError(state, "name")}>
+        <Input
+          id="name"
+          name="name"
+          required
+          maxLength={60}
+          placeholder="Reserva de emergência"
+          defaultValue={meta?.name}
+        />
+      </Field>
+
+      <Field
+        label="Quanto quero juntar"
+        name="target"
+        required
+        error={fieldError(state, "target")}
+      >
+        <Input
+          id="target"
+          name="target"
+          required
+          inputMode="decimal"
+          placeholder="30.000,00"
+          className="font-mono"
+          defaultValue={
+            meta ? (meta.targetCents / 100).toFixed(2).replace(".", ",") : undefined
+          }
+        />
+      </Field>
+
+      <Field
+        label="Já tenho guardado"
+        name="saved"
+        error={fieldError(state, "saved")}
+        hint="Opcional."
+      >
+        <Input
+          id="saved"
+          name="saved"
+          inputMode="decimal"
+          placeholder="0,00"
+          className="font-mono"
+          defaultValue={
+            meta ? (meta.savedCents / 100).toFixed(2).replace(".", ",") : undefined
+          }
+        />
+      </Field>
+
+      <Field label="Prazo" name="deadline" hint="Opcional.">
+        <Input id="deadline" name="deadline" type="date" defaultValue={meta?.deadline ?? ""} />
+      </Field>
+    </>
+  );
+}
+
+function EditarMeta({ meta }: { meta: Goal }) {
+  return (
+    <EditDialog title="Editar meta" ariaLabel={`Editar ${meta.name}`}>
+      {(fechar) => (
+        <ActionForm action={updateGoalForm} submitLabel="Salvar meta" onSuccess={fechar}>
+          {(state) => <CamposMeta meta={meta} state={state} />}
+        </ActionForm>
+      )}
+    </EditDialog>
+  );
+}
+
 export function GoalManager({
   goals,
   annualRatePct,
@@ -25,86 +105,25 @@ export function GoalManager({
   goals: Goal[];
   annualRatePct: number;
 }) {
-  const [showForm, setShowForm] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
 
   return (
     <Card>
       <CardTitle
         hint={
-          <button
-            type="button"
-            onClick={() => setShowForm((v) => !v)}
-            aria-expanded={showForm}
-            className="inline-flex cursor-pointer items-center gap-sm underline-offset-4 transition-colors duration-200 hover:text-foreground hover:underline"
-          >
-            <Plus className="size-3" aria-hidden="true" />
-            {showForm ? "fechar" : "nova meta"}
-          </button>
+          <AddDialog label="Nova meta" title="Nova meta" className="px-lg py-sm text-xs">
+            {(fechar) => (
+              <ActionForm action={createGoalForm} submitLabel="Criar meta" onSuccess={fechar}>
+                {(state) => <CamposMeta state={state} />}
+              </ActionForm>
+            )}
+          </AddDialog>
         }
       >
         Metas
       </CardTitle>
 
-      {showForm ? (
-        <div className="mb-xl rounded-control border border-border bg-muted/40 p-xl">
-          <ActionForm action={createGoalForm} submitLabel="Criar meta">
-            {(state) => (
-              <>
-                <Field
-                  label="Nome"
-                  name="name"
-                  required
-                  error={fieldError(state, "name")}
-                >
-                  <Input
-                    id="name"
-                    name="name"
-                    required
-                    maxLength={60}
-                    placeholder="Reserva de emergência"
-                  />
-                </Field>
 
-                <Field
-                  label="Quanto quero juntar"
-                  name="target"
-                  required
-                  error={fieldError(state, "target")}
-                >
-                  <Input
-                    id="target"
-                    name="target"
-                    required
-                    inputMode="decimal"
-                    placeholder="30.000,00"
-                    className="font-mono"
-                  />
-                </Field>
-
-                <Field
-                  label="Já tenho guardado"
-                  name="saved"
-                  error={fieldError(state, "saved")}
-                  hint="Opcional."
-                >
-                  <Input
-                    id="saved"
-                    name="saved"
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    className="font-mono"
-                  />
-                </Field>
-
-                <Field label="Prazo" name="deadline" hint="Opcional.">
-                  <Input id="deadline" name="deadline" type="date" />
-                </Field>
-              </>
-            )}
-          </ActionForm>
-        </div>
-      ) : null}
 
       {goals.length === 0 ? (
         <EmptyState title="Nenhuma meta ainda">
@@ -172,6 +191,7 @@ export function GoalManager({
                     >
                       Somar
                     </ActionButton>
+                    <EditarMeta meta={g} />
                     <ActionButton
                       action={() => deleteGoalAction(g.id)}
                       confirm

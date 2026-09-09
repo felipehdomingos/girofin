@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { Pencil, Plus, X } from "lucide-react";
 
 /**
  * Botão "adicionar" que abre o cadastro num popup.
@@ -145,6 +145,45 @@ export function AddDialog({
           </div>
         ) : null}
       </dialog>
+    </>
+  );
+}
+
+/**
+ * Botão "Editar" de uma linha de lista, com o popup do mesmo formulário.
+ *
+ * Todo dado que o cliente cadastra tem de poder ser corrigido e apagado — uma
+ * lista onde só dá para incluir vira um depósito de erro de digitação.
+ */
+export function EditDialog({
+  title,
+  ariaLabel,
+  children,
+  className = "",
+}: {
+  title: string;
+  /** Nomeia o botão quando há vários "Editar" na mesma tela. */
+  ariaLabel: string;
+  children: (close: () => void) => ReactNode;
+  className?: string;
+}) {
+  const [aberto, setAberto] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        aria-label={ariaLabel}
+        className={`inline-flex cursor-pointer items-center gap-sm rounded-control border border-border px-lg py-sm text-xs font-semibold transition-colors duration-200 hover:bg-muted ${className}`}
+      >
+        <Pencil className="size-3" aria-hidden="true" />
+        Editar
+      </button>
+
+      <AddDialog label={ariaLabel} title={title} open={aberto} onOpenChange={setAberto} hideTrigger>
+        {children}
+      </AddDialog>
     </>
   );
 }

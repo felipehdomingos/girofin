@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil } from "lucide-react";
-
 import { ActionButton } from "./action-button";
-import { AddDialog } from "./add-dialog";
+import { AddDialog, EditDialog } from "./add-dialog";
 import { ColorPicker } from "./bank-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
 import { Badge, Card, CardTitle, CategoryDot, Money, ProgressBar } from "./ui";
@@ -83,39 +81,19 @@ function CamposCategoria({
   );
 }
 
-/** Botão "Editar" de uma linha, com o popup do mesmo formulário. */
 function EditarCategoria({ categoria }: { categoria: Category }) {
-  const [aberto, setAberto] = useState(false);
   const [cor, setCor] = useState(categoria.color);
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setAberto(true)}
-        className="inline-flex cursor-pointer items-center gap-sm rounded-control border border-border px-lg py-sm text-xs font-semibold transition-colors duration-200 hover:bg-muted"
-      >
-        <Pencil className="size-3" aria-hidden="true" />
-        Editar
-      </button>
-
-      {/* Sem botão próprio: quem abre é o "Editar" acima. */}
-      <AddDialog
-        label={`Editar ${categoria.name}`}
-        title="Editar categoria"
-        open={aberto}
-        onOpenChange={setAberto}
-        hideTrigger
-      >
-        {(fechar) => (
-          <ActionForm action={updateCategoryForm} submitLabel="Salvar categoria" onSuccess={fechar}>
-            {(state) => (
-              <CamposCategoria categoria={categoria} cor={cor} setCor={setCor} state={state} />
-            )}
-          </ActionForm>
-        )}
-      </AddDialog>
-    </>
+    <EditDialog title="Editar categoria" ariaLabel={`Editar ${categoria.name}`}>
+      {(fechar) => (
+        <ActionForm action={updateCategoryForm} submitLabel="Salvar categoria" onSuccess={fechar}>
+          {(state) => (
+            <CamposCategoria categoria={categoria} cor={cor} setCor={setCor} state={state} />
+          )}
+        </ActionForm>
+      )}
+    </EditDialog>
   );
 }
 

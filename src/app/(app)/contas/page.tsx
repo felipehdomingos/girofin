@@ -67,7 +67,7 @@ export default async function ContasPage({
       </div>
 
       <div className="mt-xl">
-        <BillList bills={bills} accounts={accounts} today={today()} />
+        <BillList bills={bills} accounts={accounts} categories={categories} today={today()} />
       </div>
     </>
   );

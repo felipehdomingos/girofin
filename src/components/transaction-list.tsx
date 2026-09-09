@@ -5,10 +5,17 @@ import { Repeat, Trash2 } from "lucide-react";
 
 import { ActionButton } from "./action-button";
 import { Badge, CategoryDot, EmptyState, Money } from "./ui";
+import { TransactionEditDialog } from "./transaction-edit";
 import { deletePurchaseAction, deleteTransactionAction } from "@/lib/actions";
 import { formatDay } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
-import { METHOD_LABEL, type TransactionWithCategory } from "@/lib/types";
+import {
+  METHOD_LABEL,
+  type Account,
+  type Category,
+  type IncomeSource,
+  type TransactionWithCategory,
+} from "@/lib/types";
 
 /**
  * Lista do mês com busca e filtro por categoria.
@@ -20,9 +27,17 @@ import { METHOD_LABEL, type TransactionWithCategory } from "@/lib/types";
 export function TransactionList({
   transactions,
   month,
+  allCategories,
+  accounts,
+  incomeSources,
 }: {
   transactions: TransactionWithCategory[];
   month: string;
+  /** Todas as categorias, não só as que aparecem na lista: a edição precisa
+      poder mover o lançamento para uma categoria ainda não usada no mês. */
+  allCategories: Category[];
+  accounts: Account[];
+  incomeSources: IncomeSource[];
 }) {
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -163,6 +178,13 @@ export function TransactionList({
               {/* Numa compra parcelada, apagar só a parcela do mês deixaria as
                   outras órfãs e o total da compra errado. O padrão aqui é
                   apagar a compra inteira. */}
+              <TransactionEditDialog
+                transaction={t}
+                categories={allCategories}
+                accounts={accounts}
+                incomeSources={incomeSources}
+              />
+
               <ActionButton
                 action={() =>
                   t.purchaseId

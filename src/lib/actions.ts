@@ -294,6 +294,47 @@ export async function createTransactionAction(
   }
 }
 
+export async function updateTransactionAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Lancamento nao informado." };
+
+  const parsed = transactionSchema.safeParse({
+    type: formData.get("type"),
+    amount: formData.get("amount"),
+    date: formData.get("date"),
+    description: formData.get("description"),
+    categoryId: formData.get("categoryId"),
+    // A estrutura da compra nao se edita por aqui: a parcela e uma linha de um
+    // conjunto, e mexer nisso pelo formulario de uma delas deixaria as outras
+    // orfas de uma compra que mudou de forma.
+    nature: "VISTA",
+    accountId: formData.get("accountId") || null,
+    incomeSourceId: formData.get("incomeSourceId") || null,
+    method: formData.get("method") || undefined,
+  });
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    await repo.updateTransaction(id, {
+      type: parsed.data.type,
+      amountCents: parsed.data.amount,
+      date: parsed.data.date,
+      description: parsed.data.description,
+      categoryId: parsed.data.categoryId,
+      accountId: parsed.data.accountId ?? null,
+      incomeSourceId: parsed.data.incomeSourceId ?? null,
+      method: parsed.data.method ?? null,
+    });
+    revalidateFinance();
+    return { ok: true, message: "Lancamento atualizado." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 export async function deleteTransactionAction(id: string): Promise<ActionResult> {
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
   if (!(await currentUserId())) return DENIED;
@@ -588,6 +629,47 @@ export async function createBillAction(formData: FormData): Promise<ActionResult
     });
     revalidateFinance();
     return { ok: true, message: "Conta cadastrada." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
+export async function updateBillAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Conta nao informada." };
+  const recurrence = formData.get("recurrence");
+
+  const parsed = billSchema.safeParse({
+    name: formData.get("name"),
+    recurrence,
+    amount: formData.get("amount"),
+    dueDay: recurrence === "MONTHLY" ? formData.get("dueDay") : undefined,
+    dueDate: recurrence === "ONCE" ? formData.get("dueDate") : undefined,
+    categoryId: formData.get("categoryId"),
+    variable: formData.get("variable") === "on",
+    barcode: formData.get("barcode") || null,
+    notes: formData.get("notes") || null,
+  });
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    await repo.updateBill(id, {
+      name: parsed.data.name,
+      recurrence: parsed.data.recurrence,
+      amountCents: parsed.data.amount,
+      dueDay: parsed.data.dueDay ?? null,
+      dueDate: parsed.data.dueDate ?? null,
+      categoryId: parsed.data.categoryId,
+      variable: parsed.data.variable,
+      active: true,
+      barcode: parsed.data.barcode ?? null,
+      notes: parsed.data.notes ?? null,
+    });
+    revalidateFinance();
+    return { ok: true, message: "Conta atualizada." };
   } catch (e) {
     return { ok: false, error: mensagemDeErro(e) };
   }
@@ -1014,6 +1096,34 @@ export async function createIncomeSourceAction(
   }
 }
 
+export async function updateIncomeSourceAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Fonte nao informada." };
+
+  const parsed = incomeSourceSchema.safeParse({
+    name: formData.get("name"),
+    kind: formData.get("kind"),
+    color: formData.get("color"),
+  });
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    await repo.updateIncomeSource(id, {
+      name: parsed.data.name,
+      kind: parsed.data.kind,
+      color: parsed.data.color,
+    });
+    revalidateFinance();
+    revalidatePath("/carteiras");
+    return { ok: true, message: "Fonte de renda atualizada." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 export async function deleteIncomeSourceAction(id: string): Promise<ActionResult> {
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
   if (!(await currentUserId())) return DENIED;
@@ -1132,6 +1242,35 @@ export async function addToGoalAction(
   }
 }
 
+export async function updateGoalAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Meta nao informada." };
+
+  const parsed = goalSchema.safeParse({
+    name: formData.get("name"),
+    target: formData.get("target"),
+    saved: formData.get("saved") || undefined,
+    deadline: formData.get("deadline") || null,
+  });
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    await repo.updateGoal(id, {
+      name: parsed.data.name,
+      targetCents: parsed.data.target,
+      savedCents: parsed.data.saved,
+      deadline: parsed.data.deadline ?? null,
+    });
+    revalidatePath("/economia");
+    return { ok: true, message: "Meta atualizada." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 export async function deleteGoalAction(id: string): Promise<ActionResult> {
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
   if (!(await currentUserId())) return DENIED;
@@ -1182,6 +1321,43 @@ export async function createScenarioAction(formData: FormData): Promise<ActionRe
   }
 }
 
+export async function updateScenarioAction(formData: FormData): Promise<ActionResult> {
+  // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
+  if (!(await currentUserId())) return DENIED;
+
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Cenario nao informado." };
+
+  const parsed = scenarioSchema.safeParse({
+    name: formData.get("name"),
+    initial: formData.get("initial") || undefined,
+    monthly: formData.get("monthly") || undefined,
+    months: formData.get("months"),
+    rateSource: formData.get("rateSource"),
+    ratePercentOfIndex: formData.get("ratePercentOfIndex") || 100,
+    customAnnualRate: formData.get("customAnnualRate") || 12,
+    showReal: formData.get("showReal") === "on",
+  });
+  if (!parsed.success) return zodToResult(parsed.error);
+
+  try {
+    await repo.updateScenario(id, {
+      name: parsed.data.name,
+      initialCents: parsed.data.initial,
+      monthlyCents: parsed.data.monthly,
+      months: parsed.data.months,
+      rateSource: parsed.data.rateSource,
+      ratePercentOfIndex: parsed.data.ratePercentOfIndex,
+      customAnnualRate: parsed.data.customAnnualRate,
+      showReal: parsed.data.showReal,
+    });
+    revalidatePath("/investimentos");
+    return { ok: true, message: "Cenario atualizado." };
+  } catch (e) {
+    return { ok: false, error: mensagemDeErro(e) };
+  }
+}
+
 export async function deleteScenarioAction(id: string): Promise<ActionResult> {
   // Server Action e endpoint HTTP publico: exige sessao antes de tocar em dado.
   if (!(await currentUserId())) return DENIED;
@@ -1213,6 +1389,21 @@ export const createCategoryForm: FormAction = async (_prev, formData) =>
 
 export const updateCategoryForm: FormAction = async (_prev, formData) =>
   updateCategoryAction(formData);
+
+export const updateTransactionForm: FormAction = async (_prev, formData) =>
+  updateTransactionAction(formData);
+
+export const updateBillForm: FormAction = async (_prev, formData) =>
+  updateBillAction(formData);
+
+export const updateIncomeSourceForm: FormAction = async (_prev, formData) =>
+  updateIncomeSourceAction(formData);
+
+export const updateGoalForm: FormAction = async (_prev, formData) =>
+  updateGoalAction(formData);
+
+export const updateScenarioForm: FormAction = async (_prev, formData) =>
+  updateScenarioAction(formData);
 
 export const createBillForm: FormAction = async (_prev, formData) =>
   createBillAction(formData);

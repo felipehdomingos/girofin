@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 
-import { AddDialog } from "./add-dialog";
+import { AddDialog, EditDialog } from "./add-dialog";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
-import { createBillForm } from "@/lib/actions";
-import { KIND_LABEL, type Category } from "@/lib/types";
+import { createBillForm, updateBillForm } from "@/lib/actions";
+import { KIND_LABEL, type Bill, type Category } from "@/lib/types";
 
 /**
  * Botão + popup do cadastro de conta.
@@ -37,13 +37,18 @@ export function BillForm({
   categories,
   today,
   onSaved,
+  bill,
 }: {
   categories: Category[];
   today: string;
   /** Fecha o popup que embrulha este formulário. */
   onSaved?: () => void;
+  /** Conta existente: os mesmos campos passam a editar em vez de cadastrar. */
+  bill?: Bill;
 }) {
-  const [recurrence, setRecurrence] = useState<"MONTHLY" | "ONCE">("MONTHLY");
+  const [recurrence, setRecurrence] = useState<"MONTHLY" | "ONCE">(
+    bill?.recurrence ?? "MONTHLY",
+  );
 
   const grouped = (["NEED", "WANT", "SAVE"] as const).map((kind) => ({
     kind,
@@ -53,9 +58,14 @@ export function BillForm({
   // Sem moldura própria: quem embrulha é o popup, que já dá título e borda.
   // O aviso sobre fatura de cartão desce como descrição do popup.
   return (
-    <ActionForm action={createBillForm} submitLabel="Cadastrar" onSuccess={onSaved}>
+    <ActionForm
+      action={bill ? updateBillForm : createBillForm}
+      submitLabel={bill ? "Salvar conta" : "Cadastrar"}
+      onSuccess={onSaved}
+    >
         {(state) => (
           <>
+            {bill ? <input type="hidden" name="id" value={bill.id} /> : null}
             <Field label="Tipo" name="recurrence" required>
               <Select
                 id="recurrence"
@@ -83,6 +93,7 @@ export function BillForm({
                 required
                 maxLength={60}
                 placeholder={recurrence === "MONTHLY" ? "Aluguel" : "IPVA 2026"}
+                defaultValue={bill?.name}
               />
             </Field>
 
@@ -100,6 +111,9 @@ export function BillForm({
                 inputMode="decimal"
                 placeholder="1.850,00"
                 className="font-mono"
+                defaultValue={
+                  bill ? (bill.amountCents / 100).toFixed(2).replace(".", ",") : undefined
+                }
               />
             </Field>
 
@@ -118,7 +132,7 @@ export function BillForm({
                   min={1}
                   max={31}
                   required
-                  defaultValue={10}
+                  defaultValue={bill?.dueDay ?? 10}
                   className="font-mono"
                 />
               </Field>
@@ -134,7 +148,7 @@ export function BillForm({
                   name="dueDate"
                   type="date"
                   required
-                  defaultValue={today}
+                  defaultValue={bill?.dueDate ?? today}
                 />
               </Field>
             )}
@@ -145,7 +159,7 @@ export function BillForm({
               required
               error={fieldError(state, "categoryId")}
             >
-              <Select id="categoryId" name="categoryId" required>
+              <Select id="categoryId" name="categoryId" required defaultValue={bill?.categoryId}>
                 {grouped.map(({ kind, items }) =>
                   items.length ? (
                     <optgroup key={kind} label={KIND_LABEL[kind]}>
@@ -171,6 +185,7 @@ export function BillForm({
                 name="barcode"
                 maxLength={60}
                 className="font-mono text-xs"
+                defaultValue={bill?.barcode ?? ""}
               />
             </Field>
 
@@ -178,6 +193,7 @@ export function BillForm({
               <input
                 type="checkbox"
                 name="variable"
+                defaultChecked={bill?.variable}
                 className="size-4 cursor-pointer accent-[var(--color-accent)]"
               />
               O valor muda todo mês (luz, água, telefone)
@@ -185,5 +201,24 @@ export function BillForm({
           </>
         )}
     </ActionForm>
+  );
+}
+
+/** Botão + popup para corrigir uma conta já cadastrada. */
+export function BillEditDialog({
+  bill,
+  categories,
+  today,
+}: {
+  bill: Bill;
+  categories: Category[];
+  today: string;
+}) {
+  return (
+    <EditDialog title={`Editar ${bill.name}`} ariaLabel={`Editar ${bill.name}`}>
+      {(fechar) => (
+        <BillForm bill={bill} categories={categories} today={today} onSaved={fechar} />
+      )}
+    </EditDialog>
   );
 }

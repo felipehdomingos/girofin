@@ -14,11 +14,12 @@ import {
 import { ActionButton } from "./action-button";
 import { BankLogo, BankPicker, ColorPicker, shortBankName } from "./bank-picker";
 import { ActionForm, Field, Input, Select, fieldError } from "./form-kit";
-import { AddDialog } from "./add-dialog";
+import { AddDialog, EditDialog } from "./add-dialog";
 import { Badge, Card, CardTitle, EmptyState, Money, ProgressBar } from "./ui";
 import {
   createAccountForm,
   createIncomeSourceForm,
+  updateIncomeSourceForm,
   updateAccountForm,
   deleteAccountAction,
   deleteIncomeSourceAction,
@@ -801,6 +802,67 @@ function SecaoCartoes({
 
 // ---------------------------------------------------------------- empresas
 
+/** Campos da fonte de renda. Os mesmos para cadastrar e editar. */
+function CamposEmpresa({
+  fonte,
+  cor,
+  setCor,
+  state,
+}: {
+  fonte?: IncomeSource;
+  cor: string;
+  setCor: (hex: string) => void;
+  state: Parameters<Parameters<typeof ActionForm>[0]["children"]>[0];
+}) {
+  return (
+    <>
+      {fonte ? <input type="hidden" name="id" value={fonte.id} /> : null}
+
+      <Field label="Nome da empresa" name="name" required error={fieldError(state, "name")}>
+        <Input
+          id="src-name"
+          name="name"
+          required
+          maxLength={40}
+          placeholder="Acme Tecnologia"
+          defaultValue={fonte?.name}
+        />
+      </Field>
+
+      <Field
+        label="Regime"
+        name="kind"
+        required
+        hint="PJ costuma variar mês a mês — é o que o app usa para calcular sua sobra com cautela."
+      >
+        <Select id="src-kind" name="kind" defaultValue={fonte?.kind ?? "PJ"} required>
+          <option value="CLT">CLT</option>
+          <option value="PJ">PJ</option>
+          <option value="OUTRO">Outra (freela, aluguel, dividendos)</option>
+        </Select>
+      </Field>
+
+      <Field label="Cor" name="color" error={fieldError(state, "color")}>
+        <ColorPicker name="color" value={cor} onChange={setCor} palette={VIZ_PALETTE} />
+      </Field>
+    </>
+  );
+}
+
+function EditarEmpresa({ fonte }: { fonte: IncomeSource }) {
+  const [cor, setCor] = useState(fonte.color);
+
+  return (
+    <EditDialog title="Editar fonte de renda" ariaLabel={`Editar ${fonte.name}`}>
+      {(fechar) => (
+        <ActionForm action={updateIncomeSourceForm} submitLabel="Salvar" onSuccess={fechar}>
+          {(state) => <CamposEmpresa fonte={fonte} cor={cor} setCor={setCor} state={state} />}
+        </ActionForm>
+      )}
+    </EditDialog>
+  );
+}
+
 function SecaoEmpresas({
   incomeSources,
   incomeThisMonth,
@@ -815,48 +877,9 @@ function SecaoEmpresas({
   const formularioEmpresa = (
     <AddDialog label="Cadastrar empresa" title="Cadastrar empresa ou fonte de renda">
       {(fechar) => (
-          <ActionForm action={createIncomeSourceForm} submitLabel="Cadastrar" onSuccess={fechar}>
-            {(state) => (
-              <>
-                <Field
-                  label="Nome da empresa"
-                  name="name"
-                  required
-                  error={fieldError(state, "name")}
-                >
-                  <Input
-                    id="src-name"
-                    name="name"
-                    required
-                    maxLength={40}
-                    placeholder="Acme Tecnologia"
-                  />
-                </Field>
-
-                <Field
-                  label="Regime"
-                  name="kind"
-                  required
-                  hint="PJ costuma variar mês a mês — é o que o app usa para calcular sua sobra com cautela."
-                >
-                  <Select id="src-kind" name="kind" defaultValue="PJ" required>
-                    <option value="CLT">CLT</option>
-                    <option value="PJ">PJ</option>
-                    <option value="OUTRO">Outra (freela, aluguel, dividendos)</option>
-                  </Select>
-                </Field>
-
-                <Field label="Cor" name="color" error={fieldError(state, "color")}>
-                  <ColorPicker
-                    name="color"
-                    value={cor}
-                    onChange={setCor}
-                    palette={VIZ_PALETTE}
-                  />
-                </Field>
-              </>
-            )}
-          </ActionForm>
+        <ActionForm action={createIncomeSourceForm} submitLabel="Cadastrar" onSuccess={fechar}>
+          {(state) => <CamposEmpresa cor={cor} setCor={setCor} state={state} />}
+        </ActionForm>
       )}
     </AddDialog>
   );
@@ -904,6 +927,7 @@ function SecaoEmpresas({
                       </span>
                     ) : null}
                   </span>
+                  <EditarEmpresa fonte={s} />
                   <ActionButton
                     action={() => deleteIncomeSourceAction(s.id)}
                     confirm
